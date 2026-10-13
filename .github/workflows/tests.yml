@@ -18,3 +18,28 @@ jobs:
         run: python -m pip install "python-dotenv>=1,<2"
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+
+  windows-voice-import:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install local-voice dependencies
+        run: python -m pip install -r requirements-voice-kokoro.txt
+      - name: Check Brazilian Portuguese phonemization
+        shell: pwsh
+        run: |
+          @'
+          from misaki.espeak import EspeakG2P
+          from kokoro_onnx import Kokoro
+          g2p = EspeakG2P(language="pt-br")
+          phonemes, _ = g2p("Olá, Ângela. Teste de voz feminina.")
+          if not phonemes:
+              raise RuntimeError("No phonemes returned")
+          print("Portuguese G2P available; model loading requires downloaded assets.")
+          '@ | Set-Content -Path voice_smoke.py -Encoding utf8
+          python voice_smoke.py
