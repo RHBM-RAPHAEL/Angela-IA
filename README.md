@@ -1,24 +1,28 @@
 # Ângela AI
 
-Assistente pessoal de código aberto para Windows, com interface em português, comandos locais, reconhecimento de voz opcional e síntese de voz feminina.
+Assistente pessoal de código aberto para Windows. Interface em português, comandos locais, reconhecimento de voz com Vosk, síntese de voz feminina e conversa opcional com Groq.
 
-> **Status:** protótipo inicial (v0.1). O controle é limitado a uma lista segura de ações. Ainda não há acesso à câmera, automação irrestrita, ativação contínua por “Ângela” ou interface Flutter.
+> **Status:** protótipo v0.2. O controle do Windows é limitado a ações específicas. Ainda não há câmera, controle geral do computador, interface Flutter ou ativação contínua pela palavra “Ângela”.
 
-## O que a primeira versão faz
+## O que funciona nesta versão
 
-- Conversa por texto em uma janela desktop.
-- Abre Bloco de Notas, Calculadora, Explorador de Arquivos e VS Code.
-- Alterna o tema claro/escuro do Windows 10/11 (configurações do usuário).
-- Fala em português brasileiro com a voz feminina **pt-BR-FranciscaNeural** usando Edge TTS, quando conectado à internet.
-- Recebe fala do microfone (botão **Ouvir**), com Vosk leve e local.
-- Responde perguntas gerais usando a API Groq **se** você configurar uma chave; sem chave, as ações locais ainda funcionam.
-- Nunca executa comandos livres de terminal gerados por IA.
+- Conversa por texto.
+- Abre calculadora, Bloco de Notas, Explorador de Arquivos e VS Code.
+- Altera o tema claro/escuro do Windows 10/11.
+- Reconhece fala em português localmente pelo botão **Ouvir (8 s)**.
+- Tenta reproduzir voz feminina pt-BR **Francisca** via serviço online Edge TTS.
+- Se o áudio online falhar, tenta uma **voz feminina pt-BR local** instalada no Windows Speech (SAPI).
+- Botão **Testar voz** e seletor do mecanismo: **Automático**, **Francisca (online)**, **Windows (offline)**. Erros de voz aparecem no chat para diagnóstico.
+- Perguntas gerais pela API Groq, somente se você configurar uma chave gratuita com limites de uso.
 
-## Instalação — PowerShell no VS Code (Windows)
+A voz local depende de uma voz **feminina pt-BR compatível com SAPI** instalada no sistema. Nem todas as vozes que aparecem nas Configurações do Windows são acessíveis pelo SAPI. Caso não exista uma voz compatível, a opção offline mostra um erro informativo e a opção online Francisca continua disponível.
 
-Pré-requisitos: Git e Python 3.11 ou 3.12 (com Tkinter). A versão 3.12 está nos comandos abaixo.
+## Instalação (PowerShell do VS Code)
 
-```powershell
+Pré-requisitos: Git e Python 3.12 (com Tkinter).
+
+\`\`\`powershell
+cd "D:\RHBM TechWorks\Meus Softwares"
 git clone https://github.com/RHBM-RAPHAEL/Angela-IA.git
 cd Angela-IA
 py -3.12 -m venv .venv
@@ -27,53 +31,73 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m angela.download_model
 Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m angela
-```
+\`\`\`
 
-O download do Vosk ocorre uma vez (modelo pequeno em português, hospedado pelo projeto Vosk). Para conversar livremente, edite o arquivo local `.env` e coloque sua chave Groq em `GROQ_API_KEY=`. **Não publique a chave, nem envie a chave em mensagens.** Sem chave, você pode testar a interface e os comandos locais.
+### Para quem já instalou a v0.1
 
-A voz Edge TTS usa serviço online, que pode ter indisponibilidades ou limites; nenhuma assinatura é necessária para testar a biblioteca. O plano gratuito da Groq pode ter limites de uso.
+Feche a janela antiga e, no diretório do projeto:
 
-## Comandos para experimentar
+\`\`\`powershell
+git pull origin main
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m angela
+\`\`\`
 
-- `Olá, Ângela`
-- `Abra a calculadora`
-- `Abre o bloco de notas`
-- `Abra o explorador de arquivos`
-- `Abra o VS Code`
-- `Mude o tema do Windows para claro`
-- `Coloque o Windows no tema escuro`
-- `O que é Python?` (requer chave Groq)
+Não apague nem publique \`.env\`; contém configurações pessoais e eventualmente uma chave de API.
 
-O botão **Ouvir** grava somente durante a escuta solicitada (até 8 segundos). O reconhecimento ocorre localmente, sem enviar o áudio ao serviço de IA. O texto reconhecido é enviado ao Groq apenas quando necessário e quando a chave estiver configurada.
+## Teste de voz (importante)
+
+1. Confirme que o áudio do Windows sai pelo dispositivo correto e que o volume está audível.
+2. Clique em **Testar voz**, começando por **Francisca (online)**, com internet.
+3. Se não ouvir, leia a mensagem **Falha na saída de voz** exibida no próprio chat.
+4. Experimente **Windows (offline)**; a voz feminina brasileira local precisa estar instalada e acessível ao Windows Speech.
+5. Por fim teste **Automático (online → offline)**. Ele tenta a Francisca e recorre à voz local quando necessário.
+
+A voz online envia **o texto da resposta**, não o áudio captado no microfone, ao serviço Microsoft Edge TTS. O reconhecimento por Vosk ocorre localmente. Ao usar Groq, o texto da pergunta é enviado à API para gerar resposta; nunca compartilhe sua chave.
+
+## Comandos
+
+\`\`\`text
+Olá, Ângela
+Abra a calculadora
+Abra o bloco de notas
+Abra o explorador de arquivos
+Abra o VS Code
+Mude o tema do Windows para claro
+Coloque o Windows no tema escuro
+O que é Python?   (requer chave Groq)
+\`\`\`
 
 ## Testes
 
-```powershell
+\`\`\`powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
-```
+\`\`\`
 
-## Segurança e privacidade
+Os testes de fallback simulam serviços de voz, não testam alto-falantes físicos do seu computador.
 
-Acesso por **lista permitida**, com ações explícitas. Respostas do modelo de linguagem não são interpretadas como código e não dão acesso irrestrito ao sistema. Os modelos de voz são baixados para `models/`, ignorado pelo Git. `.env` e arquivos temporários não são versionados.
+## Segurança
+
+O programa só executa ações locais explícitas de uma lista permitida. Respostas da IA não são executadas como código. \`.env\`, modelos baixados e arquivos temporários são ignorados pelo Git. O microfone só grava após o botão **Ouvir**, por até oito segundos.
 
 ## Arquitetura
 
-```text
+\`\`\`text
 angela/
-  __main__.py       # ponto de entrada
-  ui.py             # interface Tkinter
+  __main__.py
+  ui.py             # interface Tkinter + botão Testar voz
   assistant.py      # roteamento de pedidos
-  actions.py        # ações seguras de Windows
-  chat.py           # diálogo via Groq, opcional
-  speech.py         # microfone Vosk e voz Edge TTS
-  download_model.py # instalação do modelo pequeno de reconhecimento
+  actions.py        # ações seguras Windows
+  chat.py           # Groq opcional
+  speech.py         # microfone Vosk + Edge TTS + Windows SAPI
+  download_model.py # instalação do modelo de reconhecimento
 tests/
-```
+\`\`\`
 
-## Próximos passos
+## Próximas etapas
 
-Ativação “Ângela” sem botão (com privacidade configurável), interface Flutter, visão de tela/câmera autorizada, automação guiada com confirmação de operações sensíveis e uma voz offline quando estiver estável.
+Estabilizar saída de voz em Windows; adicionar detector da palavra "Ângela" ativável pelo usuário, interface Flutter, câmera/tela por permissão e automação guiada com confirmação para ações sensíveis.
 
 ## Licença
 
-MIT. Consulte `LICENSE`.
+MIT — veja \`LICENSE\`.

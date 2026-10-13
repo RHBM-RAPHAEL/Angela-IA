@@ -1,4 +1,4 @@
-"""Janela desktop simples para começar testes no Windows sem Flutter."""
+"""Janela de testes do protótipo Ângela AI no Windows."""
 from __future__ import annotations
 
 import queue
@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import scrolledtext
 
 from .assistant import AssistantEngine
+from .speech import VOICE_TEST_SENTENCE
 
 
 class AngelaWindow:
@@ -16,16 +17,23 @@ class AngelaWindow:
     SUBTLE = "#9bb0cd"
     ACCENT = "#7c9dff"
 
+    PROVIDERS = {
+        "Automático (online → offline)": "auto",
+        "Francisca (online)": "edge",
+        "Windows (offline)": "windows",
+    }
+
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title("Ângela AI — v0.1")
-        root.geometry("740x560")
-        root.minsize(540, 440)
+        root.title("Ângela AI — v0.2")
+        root.geometry("760x600")
+        root.minsize(580, 480)
         root.configure(bg=self.BACKGROUND)
         self.engine = AssistantEngine()
         self.events: queue.Queue[tuple[str, str]] = queue.Queue()
         self.busy = False
         self.voice_enabled = tk.BooleanVar(value=True)
+        self.voice_provider = tk.StringVar(value="Automático (online → offline)")
         self.status = tk.StringVar(value="Pronta para conversar")
 
         title = tk.Label(
@@ -34,7 +42,7 @@ class AngelaWindow:
         )
         title.pack(fill="x", padx=22, pady=(20, 0))
         caption = tk.Label(
-            root, text="Assistente pessoal Windows  •  Protótipo 0.1",
+            root, text="Assistente pessoal Windows  •  Protótipo 0.2",
             fg=self.SUBTLE, bg=self.BACKGROUND, font=("Segoe UI", 10),
             anchor="w",
         )
@@ -72,20 +80,42 @@ class AngelaWindow:
         )
         self.listen_button.pack(side="left", padx=(8, 0), ipady=7)
 
-        footer = tk.Frame(root, bg=self.BACKGROUND)
-        footer.pack(fill="x", padx=22, pady=(4, 16))
+        voice_controls = tk.Frame(root, bg=self.BACKGROUND)
+        voice_controls.pack(fill="x", padx=22, pady=(7, 2))
         tk.Checkbutton(
-            footer, text="Ler respostas em voz alta", variable=self.voice_enabled,
+            voice_controls, text="Ler respostas em voz alta",
+            variable=self.voice_enabled,
             bg=self.BACKGROUND, fg=self.SUBTLE, selectcolor=self.SURFACE,
             activebackground=self.BACKGROUND, activeforeground=self.TEXT,
             font=("Segoe UI", 9),
         ).pack(side="left")
+
+        self.test_voice_button = tk.Button(
+            voice_controls, text="Testar voz", command=self.on_test_voice,
+            bg="#263859", fg=self.TEXT, activebackground="#3a537d",
+            relief="flat", padx=12, cursor="hand2",
+        )
+        self.test_voice_button.pack(side="right")
+
+        provider_row = tk.Frame(root, bg=self.BACKGROUND)
+        provider_row.pack(fill="x", padx=22, pady=(2, 12))
         tk.Label(
-            footer, textvariable=self.status, fg=self.SUBTLE,
+            provider_row, text="Saída de voz:", fg=self.SUBTLE,
+            bg=self.BACKGROUND, font=("Segoe UI", 9),
+        ).pack(side="left")
+        tk.OptionMenu(
+            provider_row, self.voice_provider, *self.PROVIDERS.keys()
+        ).pack(side="left", padx=(6, 0))
+        tk.Label(
+            provider_row, textvariable=self.status, fg=self.SUBTLE,
             bg=self.BACKGROUND, font=("Segoe UI", 9),
         ).pack(side="right")
 
-        self.add_message("Ângela", "Olá! Digite 'ajuda' para conhecer os comandos.")
+        self.add_message(
+            "Ângela",
+            "Olá! Digite 'ajuda' para conhecer os comandos. "
+            "Use 'Testar voz' para verificar o áudio.",
+        )
         self.root.after(100, self.process_events)
         self.entry.focus_set()
 
@@ -99,8 +129,9 @@ class AngelaWindow:
 
     def set_busy(self, state: bool, status: str = "") -> None:
         self.busy = state
-        self.send_button.configure(state="disabled" if state else "normal")
-        self.listen_button.configure(state="disabled" if state else "normal")
+        button_state = "disabled" if state else "normal"
+        for button in (self.send_button, self.listen_button, self.test_voice_button):
+            button.configure(state=button_state)
         self.status.set(status if state else "Pronta para conversar")
 
     def on_send(self, event=None) -> None:
@@ -135,12 +166,27 @@ class AngelaWindow:
         except Exception as exc:
             self.events.put(("error", f"Não foi possível usar o microfone: {exc}"))
 
-    def voice_worker(self, text: str) -> None:
+    def selected_provider(self) -> str:
+        return self.PROVIDERS[self.voice_provider.get()]
+
+    def on_test_voice(self) -> None:
+        if self.busy:
+            return
+        self.set_busy(True, "Testando a saída de voz...")
+        provider = self.selected_provider()
+        threading.Thread(
+            target=self.voice_worker,
+            args=(VOICE_TEST_SENTENCE, provider, True),
+            daemon=True,
+        ).start()
+
+    def voice_worker(self, text: str, provider: str, test: bool = False) -> None:
         try:
             from .speech import speak
-            speak(text)
+            used_voice = speak(text, provider=provider)
+            self.events.put(("voice_test_ok" if test else "voice_ok", used_voice))
         except Exception as exc:
-            self.events.put(("voice_error", f"Voz indisponível: {type(exc).__name__}."))
+            self.events.put(("voice_test_error" if test else "voice_error", str(exc)))
 
     def process_events(self) -> None:
         try:
@@ -150,8 +196,11 @@ class AngelaWindow:
                     self.add_message("Ângela", data)
                     self.set_busy(False)
                     if self.voice_enabled.get():
+                        provider = self.selected_provider()
                         threading.Thread(
-                            target=self.voice_worker, args=(data,), daemon=True
+                            target=self.voice_worker,
+                            args=(data, provider),
+                            daemon=True,
                         ).start()
                 elif kind == "heard":
                     self.set_busy(False)
@@ -163,8 +212,19 @@ class AngelaWindow:
                 elif kind == "error":
                     self.set_busy(False)
                     self.add_message("Ângela", data)
-                elif kind == "voice_error":
-                    self.status.set(data)
+                elif kind == "voice_ok":
+                    self.status.set(f"Voz: {data}")
+                elif kind == "voice_test_ok":
+                    self.set_busy(False)
+                    self.add_message(
+                        "Ângela", f"Teste de voz concluído usando: {data}. "
+                        "Se você não ouviu, confira o volume e a saída de som do Windows.",
+                    )
+                elif kind in {"voice_error", "voice_test_error"}:
+                    if kind == "voice_test_error":
+                        self.set_busy(False)
+                    self.add_message("Ângela", f"Falha na saída de voz: {data}")
+                    self.status.set("Falha na voz — confira a mensagem acima.")
         except queue.Empty:
             pass
         self.root.after(100, self.process_events)
