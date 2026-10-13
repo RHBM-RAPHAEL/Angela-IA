@@ -1,4 +1,4 @@
-"""Testes do fallback de voz sem internet e sem dispositivo de áudio."""
+"""Testes dos mecanismos de voz sem dispositivos reais."""
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -7,28 +7,29 @@ from angela.speech import SpeechError, VOICE_TEST_SENTENCE, speak
 
 class SpeechTest(TestCase):
     def test_texto_vazio_nao_aciona_voz(self):
-        with patch("angela.speech._speak_edge") as edge:
+        with patch("angela.speech._speak_kokoro") as dora:
             self.assertEqual(speak(" "), "Nenhum texto informado.")
-            edge.assert_not_called()
+            dora.assert_not_called()
 
-    def test_fala_automatica_usa_francisca(self):
-        with patch("angela.speech._speak_edge", return_value="Francisca") as edge:
+    def test_fala_automatica_prioriza_dora(self):
+        with patch("angela.speech._speak_kokoro", return_value="Dora") as dora:
             with patch("angela.speech._speak_windows") as windows:
-                self.assertEqual(speak(VOICE_TEST_SENTENCE), "Francisca")
-                edge.assert_called_once()
+                self.assertEqual(speak(VOICE_TEST_SENTENCE), "Dora")
+                dora.assert_called_once()
                 windows.assert_not_called()
 
-    def test_fallback_quando_rede_falha(self):
-        with patch("angela.speech._speak_edge", side_effect=RuntimeError("sem rede")):
+    def test_fallback_dora_para_windows(self):
+        with patch("angela.speech._speak_kokoro", side_effect=RuntimeError("sem modelo")):
             with patch("angela.speech._speak_windows", return_value="Maria") as local:
                 self.assertEqual(speak("Olá"), "Maria")
                 local.assert_called_once_with("Olá")
 
-    def test_duas_falhas_retorna_diagnostico(self):
-        with patch("angela.speech._speak_edge", side_effect=RuntimeError("offline")):
+    def test_todos_falham_retorna_diagnostico(self):
+        with patch("angela.speech._speak_kokoro", side_effect=RuntimeError("sem modelo")):
             with patch("angela.speech._speak_windows", side_effect=SpeechError("sem voz")):
-                with self.assertRaisesRegex(SpeechError, "Confira a internet"):
-                    speak("Olá")
+                with patch("angela.speech._speak_edge", side_effect=SpeechError("403")):
+                    with self.assertRaisesRegex(SpeechError, "Confira a saída de som"):
+                        speak("Olá")
 
     def test_modo_online_nao_usa_windows(self):
         with patch("angela.speech._speak_edge", return_value="Francisca"):
@@ -48,5 +49,5 @@ class SpeechTest(TestCase):
 
     def test_entrada_limitada(self):
         with patch("angela.speech._speak_edge", return_value="Francisca") as edge:
-            speak("a" * 2200)
+            speak("a" * 2200, provider="edge")
             self.assertEqual(len(edge.call_args.args[0]), 1800)

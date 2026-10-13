@@ -18,14 +18,15 @@ class AngelaWindow:
     ACCENT = "#7c9dff"
 
     PROVIDERS = {
-        "Automático (online → offline)": "auto",
+        "Automático (Dora → Windows → Francisca)": "auto",
+        "Dora (local)": "kokoro",
         "Francisca (online)": "edge",
         "Windows (offline)": "windows",
     }
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title("Ângela AI — v0.2")
+        root.title("Ângela AI — v0.3")
         root.geometry("760x600")
         root.minsize(580, 480)
         root.configure(bg=self.BACKGROUND)
@@ -33,7 +34,7 @@ class AngelaWindow:
         self.events: queue.Queue[tuple[str, str]] = queue.Queue()
         self.busy = False
         self.voice_enabled = tk.BooleanVar(value=True)
-        self.voice_provider = tk.StringVar(value="Automático (online → offline)")
+        self.voice_provider = tk.StringVar(value="Automático (Dora → Windows → Francisca)")
         self.status = tk.StringVar(value="Pronta para conversar")
 
         title = tk.Label(
@@ -42,7 +43,7 @@ class AngelaWindow:
         )
         title.pack(fill="x", padx=22, pady=(20, 0))
         caption = tk.Label(
-            root, text="Assistente pessoal Windows  •  Protótipo 0.2",
+            root, text="Assistente pessoal Windows  •  Protótipo 0.3",
             fg=self.SUBTLE, bg=self.BACKGROUND, font=("Segoe UI", 10),
             anchor="w",
         )
@@ -114,7 +115,7 @@ class AngelaWindow:
         self.add_message(
             "Ângela",
             "Olá! Digite 'ajuda' para conhecer os comandos. "
-            "Use 'Testar voz' para verificar o áudio.",
+            "Use 'Testar voz' para verificar o áudio. Recomendo Dora (local).",
         )
         self.root.after(100, self.process_events)
         self.entry.focus_set()

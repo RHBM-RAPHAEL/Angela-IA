@@ -1,0 +1,4 @@
+# Instalação opcional da voz local feminina Dora (Python 3.12):
+# python -m pip install -r requirements-voice-kokoro.txt
+kokoro-onnx>=0.6,<1
+misaki-fork>=0.9.6,<1

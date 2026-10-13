@@ -1,8 +1,4 @@
-"""Entrada de microfone local e saída de voz com diagnóstico e fallback.
-
-Edge TTS: voz feminina Francisca, português brasileiro, requer serviço online.
-Windows: opção offline quando existe uma voz feminina pt-BR instalada em SAPI.
-"""
+"""Entrada por microfone (Vosk) e saída de voz com fallback seguro."""
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +22,7 @@ _SPEAK_LOCK = threading.Lock()
 
 
 class SpeechError(RuntimeError):
-    """Falha de voz com explicação para a interface."""
+    """Falha de síntese de voz apresentada de forma segura no chat."""
 
 
 @lru_cache(maxsize=1)
@@ -36,12 +32,11 @@ def _get_model(model_path: str):
 
 
 def listen_once(seconds: float = 8.0) -> str:
-    """Escuta apenas sob comando do usuário, sem enviar áudio à nuvem."""
+    """Grava somente quando solicitado; reconhece o áudio localmente."""
     if not MODEL_PATH.is_dir():
         raise FileNotFoundError(
             "Modelo de voz não instalado. Rode: python -m angela.download_model"
         )
-
     import sounddevice as sd
     from vosk import KaldiRecognizer
 
@@ -68,16 +63,34 @@ def listen_once(seconds: float = 8.0) -> str:
     return json.loads(recognizer.FinalResult()).get("text", "").strip()
 
 
+def _speak_kokoro(text: str) -> str:
+    from .kokoro_local import speak_dora
+    return speak_dora(text)
+
+
 def _speak_edge(text: str) -> str:
-    """Gera MP3 Francisca pelo serviço Edge e reproduz via dispositivo padrão."""
+    """Online: usa Francisca quando solicitada ou como última alternativa."""
     import edge_tts
     import pygame
 
     with tempfile.TemporaryDirectory(prefix="angela_voice_") as temp_dir:
         output = Path(temp_dir) / "fala.mp3"
-        asyncio.run(edge_tts.Communicate(text, _VOICE).save(str(output)))
-        if not output.exists() or output.stat().st_size == 0:
-            raise SpeechError("O serviço de voz não retornou áudio.")
+        try:
+            asyncio.run(edge_tts.Communicate(text, _VOICE).save(str(output)))
+        except Exception as exc:
+            # Não mostrar URLs de WebSocket com tokens temporários no chat.
+            if "403" in str(exc):
+                raise SpeechError(
+                    "O servidor Edge TTS recusou a conexão (HTTP 403). "
+                    "Use Dora (local) ou Windows (offline)."
+                ) from None
+            raise SpeechError(
+                f"Falha no serviço Edge TTS ({type(exc).__name__}). "
+                "Tente a voz local Dora."
+            ) from None
+
+        if not output.is_file() or output.stat().st_size == 0:
+            raise SpeechError("O serviço Edge TTS não retornou áudio.")
 
         initialized = False
         loaded = False
@@ -88,7 +101,6 @@ def _speak_edge(text: str) -> str:
             loaded = True
             pygame.mixer.music.set_volume(1.0)
             pygame.mixer.music.play()
-            # Não declarar sucesso antes de a reprodução ser processada.
             while pygame.mixer.music.get_busy():
                 time.sleep(0.05)
         finally:
@@ -100,7 +112,7 @@ def _speak_edge(text: str) -> str:
     return "Francisca (português brasileiro, online)"
 
 
-# Texto vem por variável de ambiente codificada; nunca é interpolado como script.
+# Nunca interpolar texto ditado/gerado no código executado pelo PowerShell.
 _WINDOWS_SAPI_SCRIPT = r"""
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Speech
@@ -131,10 +143,8 @@ try {
 
 
 def _speak_windows(text: str) -> str:
-    """Fala local por Windows PowerShell + System.Speech (sem pip extra)."""
     if sys.platform != "win32":
-        raise SpeechError("A voz offline desta versão funciona somente no Windows.")
-
+        raise SpeechError("A voz Windows SAPI funciona somente no Windows.")
     env = os.environ.copy()
     env["ANGELA_TTS_PAYLOAD"] = base64.b64encode(text.encode("utf-8")).decode("ascii")
     try:
@@ -148,18 +158,19 @@ def _speak_windows(text: str) -> str:
             check=False,
         )
     except FileNotFoundError as exc:
-        raise SpeechError("PowerShell não está disponível neste Windows.") from exc
+        raise SpeechError("PowerShell não encontrado.") from exc
     except subprocess.TimeoutExpired as exc:
-        raise SpeechError("A voz local demorou demais para responder.") from exc
+        raise SpeechError("A voz do Windows demorou demais para responder.") from exc
 
     if proc.returncode != 0:
         if "VOZ_PT_BR_FEMININA_NAO_INSTALADA" in proc.stderr:
             raise SpeechError(
-                "Não há voz feminina pt-BR do Windows Speech instalada. "
-                "Use a voz online Francisca ou instale uma voz compatível no Windows."
+                "Não há voz feminina brasileira compatível com Windows SAPI instalada."
             )
-        error = proc.stderr.strip().splitlines()[-1:] or ["Falha desconhecida."]
-        raise SpeechError(f"Falha no sintetizador de voz do Windows: {error[0][:180]}")
+        raise SpeechError(
+            f"Windows SAPI falhou (código {proc.returncode}). "
+            "Tente Dora (local)."
+        )
 
     prefix = "ANGELA_VOICE="
     selected = next(
@@ -167,35 +178,46 @@ def _speak_windows(text: str) -> str:
          if line.startswith(prefix)), None,
     )
     if not selected:
-        raise SpeechError("O Windows não confirmou qual voz foi usada.")
+        raise SpeechError("O Windows não confirmou o nome da voz.")
     return f"{selected} (português brasileiro, offline)"
 
 
-def speak(text: str, provider: str = "auto") -> str:
-    """Fala e devolve o nome da voz utilizada.
+def _friendly_error(provider: str, exc: Exception) -> str:
+    """Erros sem URLs assinadas, chaves ou tokens na interface."""
+    if provider == "edge":
+        if isinstance(exc, SpeechError):
+            return f"Francisca: {exc}"
+        return f"Francisca: falha de reprodução ({type(exc).__name__})."
+    if provider == "windows":
+        if isinstance(exc, SpeechError):
+            return f"Windows: {exc}"
+        return f"Windows: falha de reprodução ({type(exc).__name__})."
+    if isinstance(exc, (SpeechError, RuntimeError)):
+        return f"Dora: {str(exc)[:240]}"
+    return f"Dora: falha de síntese ({type(exc).__name__})."
 
-    provider='auto' tenta primeiro Francisca online e, se falhar, Windows local.
-    provider='edge' e 'windows' testam apenas o mecanismo indicado.
-    """
-    if provider not in {"auto", "edge", "windows"}:
+
+def speak(text: str, provider: str = "auto") -> str:
+    """Voz Dora local em primeiro lugar; alternativas explícitas e diagnóstico."""
+    if provider not in {"auto", "kokoro", "edge", "windows"}:
         raise ValueError("Provedor de voz inválido.")
     text = text.strip()
     if not text:
         return "Nenhum texto informado."
-
-    # Evita que duas falas disputem simultaneamente a saída de áudio.
     with _SPEAK_LOCK:
         errors = []
-        order = ("edge", "windows") if provider == "auto" else (provider,)
+        order = ("kokoro", "windows", "edge") if provider == "auto" else (provider,)
         for current in order:
             try:
-                if current == "edge":
-                    return _speak_edge(text[:1800])
-                return _speak_windows(text[:1800])
+                if current == "kokoro":
+                    return _speak_kokoro(text[:1800])
+                if current == "windows":
+                    return _speak_windows(text[:1800])
+                return _speak_edge(text[:1800])
             except Exception as exc:
-                errors.append(f"{current}: {type(exc).__name__}: {exc}")
+                errors.append(_friendly_error(current, exc))
 
     raise SpeechError(
         "Não consegui falar. " + " | ".join(errors) +
-        " | Confira a internet, o volume e a saída de som do Windows."
+        " | Confira a saída de som e teste Dora (local)."
     )

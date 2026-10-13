@@ -1,103 +1,83 @@
 # Ângela AI
 
-Assistente pessoal de código aberto para Windows. Interface em português, comandos locais, reconhecimento de voz com Vosk, síntese de voz feminina e conversa opcional com Groq.
+Assistente pessoal gratuita e de código aberto para Windows. Comandos locais, reconhecimento de voz em português e voz feminina.
 
-> **Status:** protótipo v0.2. O controle do Windows é limitado a ações específicas. Ainda não há câmera, controle geral do computador, interface Flutter ou ativação contínua pela palavra “Ângela”.
+**Status:** protótipo v0.3. Ainda sem ativação contínua por "Ângela", acesso à câmera ou controle irrestrito do Windows.
 
-## O que funciona nesta versão
+## Atualizações da v0.3
 
-- Conversa por texto.
-- Abre calculadora, Bloco de Notas, Explorador de Arquivos e VS Code.
-- Altera o tema claro/escuro do Windows 10/11.
-- Reconhece fala em português localmente pelo botão **Ouvir (8 s)**.
-- Tenta reproduzir voz feminina pt-BR **Francisca** via serviço online Edge TTS.
-- Se o áudio online falhar, tenta uma **voz feminina pt-BR local** instalada no Windows Speech (SAPI).
-- Botão **Testar voz** e seletor do mecanismo: **Automático**, **Francisca (online)**, **Windows (offline)**. Erros de voz aparecem no chat para diagnóstico.
-- Perguntas gerais pela API Groq, somente se você configurar uma chave gratuita com limites de uso.
+- Dora local: voz feminina brasileira pf_dora via Kokoro ONNX, sem servidor de áudio externo.
+- Modelo Groq corrigido para openai/gpt-oss-20b. Configurações antigas com llama-3.3-70b-versatile no arquivo .env são migradas em memória automaticamente.
+- Seleção de voz: Automático (Dora -> Windows -> Francisca), Dora (local), Windows (offline) ou Francisca (online).
+- Erros de áudio agora ocultam URLs temporárias e tokens do Edge TTS.
+- Os testes automatizados não substituem o teste real do alto-falante no Windows.
 
-A voz local depende de uma voz **feminina pt-BR compatível com SAPI** instalada no sistema. Nem todas as vozes que aparecem nas Configurações do Windows são acessíveis pelo SAPI. Caso não exista uma voz compatível, a opção offline mostra um erro informativo e a opção online Francisca continua disponível.
+Dora usa modelo compactado (~114 MB) e arquivos de voz (~28 MB). É executado localmente após a instalação inicial, sem Ollama ou GPU obrigatória. Dependências opcionais não são instaladas ao usar apenas o reconhecimento de fala.
 
-## Instalação (PowerShell do VS Code)
+## Atualizar quem já instalou a v0.2
 
-Pré-requisitos: Git e Python 3.12 (com Tkinter).
+**Feche a janela da Ângela** e execute cada linha no PowerShell do VS Code:
 
-\`\`\`powershell
-cd "D:\RHBM TechWorks\Meus Softwares"
-git clone https://github.com/RHBM-RAPHAEL/Angela-IA.git
-cd Angela-IA
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m angela.download_model
-Copy-Item .env.example .env
-.\.venv\Scripts\python.exe -m angela
-\`\`\`
+    cd "D:\RHBM TechWorks\Meus Softwares\Angela-IA"
+    git pull origin main
+    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+    .\.venv\Scripts\python.exe -m pip install -r requirements-voice-kokoro.txt
+    .\.venv\Scripts\python.exe -m angela.download_kokoro
+    .\.venv\Scripts\python.exe -m angela
 
-### Para quem já instalou a v0.1
+Na interface, selecione **Dora (local)** e clique em **Testar voz**. O primeiro carregamento pode levar alguns segundos. Depois, teste também a conversa: "O que é Python?".
 
-Feche a janela antiga e, no diretório do projeto:
+Caso Dora não fale, envie a mensagem curta de erro exibida no chat. Não compartilhe sua chave Groq nem o arquivo .env.
 
-\`\`\`powershell
-git pull origin main
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m angela
-\`\`\`
+O arquivo .env anterior é preservado pelo git pull. Você pode editar manualmente GROQ_MODEL=openai/gpt-oss-20b, mas a versão 0.3 já migra o identificador antigo automaticamente. Groq exige chave própria e tem limites no plano gratuito.
 
-Não apague nem publique \`.env\`; contém configurações pessoais e eventualmente uma chave de API.
+## Primeira instalação
 
-## Teste de voz (importante)
+Pré-requisitos: Git e Python 3.12 com Tkinter.
 
-1. Confirme que o áudio do Windows sai pelo dispositivo correto e que o volume está audível.
-2. Clique em **Testar voz**, começando por **Francisca (online)**, com internet.
-3. Se não ouvir, leia a mensagem **Falha na saída de voz** exibida no próprio chat.
-4. Experimente **Windows (offline)**; a voz feminina brasileira local precisa estar instalada e acessível ao Windows Speech.
-5. Por fim teste **Automático (online → offline)**. Ele tenta a Francisca e recorre à voz local quando necessário.
+    git clone https://github.com/RHBM-RAPHAEL/Angela-IA.git
+    cd Angela-IA
+    py -3.12 -m venv .venv
+    .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+    .\.venv\Scripts\python.exe -m angela.download_model
+    Copy-Item .env.example .env
+    .\.venv\Scripts\python.exe -m pip install -r requirements-voice-kokoro.txt
+    .\.venv\Scripts\python.exe -m angela.download_kokoro
+    .\.venv\Scripts\python.exe -m angela
 
-A voz online envia **o texto da resposta**, não o áudio captado no microfone, ao serviço Microsoft Edge TTS. O reconhecimento por Vosk ocorre localmente. Ao usar Groq, o texto da pergunta é enviado à API para gerar resposta; nunca compartilhe sua chave.
+## Comandos de exemplo
 
-## Comandos
+- Olá, Ângela
+- Abra a calculadora
+- Abra o bloco de notas
+- Abra o explorador de arquivos
+- Abra o VS Code
+- Mude o tema do Windows para claro
+- Coloque o Windows no modo escuro
+- O que é Python? (requer chave Groq)
 
-\`\`\`text
-Olá, Ângela
-Abra a calculadora
-Abra o bloco de notas
-Abra o explorador de arquivos
-Abra o VS Code
-Mude o tema do Windows para claro
-Coloque o Windows no tema escuro
-O que é Python?   (requer chave Groq)
-\`\`\`
+O botão Ouvir recebe áudio durante até oito segundos, somente quando solicitado. O Vosk faz reconhecimento local.
 
 ## Testes
 
-\`\`\`powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-\`\`\`
+    .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
-Os testes de fallback simulam serviços de voz, não testam alto-falantes físicos do seu computador.
+## Segurança e privacidade
 
-## Segurança
+- .env, modelos e arquivos de áudio não entram no Git.
+- Voz Dora funciona localmente depois da instalação; reconhecimento Vosk também é local.
+- Francisca via Edge TTS é online e pode falhar com HTTP 403, enviando o texto ao serviço.
+- Groq recebe mensagens de texto para responder somente se uma chave estiver configurada.
+- A IA não executa comandos arbitrários: apenas ações de sistema previstas no código.
+- A voz feminina SAPI do Windows depende de haver uma voz pt-BR compatível instalada.
 
-O programa só executa ações locais explícitas de uma lista permitida. Respostas da IA não são executadas como código. \`.env\`, modelos baixados e arquivos temporários são ignorados pelo Git. O microfone só grava após o botão **Ouvir**, por até oito segundos.
+## Fontes e licenças
 
-## Arquitetura
+- Kokoro ONNX (MIT): https://github.com/thewh1teagle/kokoro-onnx
+- Kokoro-82M (Apache 2.0): https://huggingface.co/hexgrad/Kokoro-82M
+- Misaki/eSpeak: https://github.com/hexgrad/misaki
+- Licença do aplicativo: MIT, ver LICENSE.
 
-\`\`\`text
-angela/
-  __main__.py
-  ui.py             # interface Tkinter + botão Testar voz
-  assistant.py      # roteamento de pedidos
-  actions.py        # ações seguras Windows
-  chat.py           # Groq opcional
-  speech.py         # microfone Vosk + Edge TTS + Windows SAPI
-  download_model.py # instalação do modelo de reconhecimento
-tests/
-\`\`\`
+## Próximos passos
 
-## Próximas etapas
-
-Estabilizar saída de voz em Windows; adicionar detector da palavra "Ângela" ativável pelo usuário, interface Flutter, câmera/tela por permissão e automação guiada com confirmação para ações sensíveis.
-
-## Licença
-
-MIT — veja \`LICENSE\`.
+Validar voz Dora no Windows e depois implementar a ativação opcional por "Ângela", interface Flutter e ações guiadas com permissões.

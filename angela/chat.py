@@ -1,4 +1,4 @@
-"""Conversa opcional pela API Groq; sem executar ações de computador."""
+"""Conversa pela API Groq (opcional); não permite executar ações por IA."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "openai/gpt-oss-20b"
+RETIRED_MODELS = frozenset({
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+})
 SYSTEM_PROMPT = (
     "Você é Ângela, uma assistente pessoal feminina de Windows. "
     "Responda em português brasileiro, com clareza, de forma curta e cordial. "
@@ -22,10 +26,22 @@ SYSTEM_PROMPT = (
 )
 
 
+def select_model(model: str | None) -> str:
+    """Migra o modelo desativado em 2026, inclusive em .env antigos."""
+    requested = (model or "").strip()
+    if not requested or requested in RETIRED_MODELS:
+        return DEFAULT_MODEL
+    return requested
+
+
 class GroqChat:
     def __init__(self, api_key: str | None = None, model: str | None = None):
-        self.api_key = (api_key if api_key is not None else os.getenv("GROQ_API_KEY", "")).strip()
-        self.model = model or os.getenv("GROQ_MODEL", DEFAULT_MODEL)
+        self.api_key = (
+            api_key if api_key is not None else os.getenv("GROQ_API_KEY", "")
+        ).strip()
+        self.model = select_model(
+            model if model is not None else os.getenv("GROQ_MODEL", DEFAULT_MODEL)
+        )
         self.history: list[dict[str, str]] = []
 
     @property
@@ -54,7 +70,7 @@ class GroqChat:
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "Angela-IA/0.1",
+                "User-Agent": "Angela-IA/0.3",
             },
             method="POST",
         )
@@ -74,7 +90,12 @@ class GroqChat:
             if exc.code == 401:
                 return "A chave Groq foi recusada. Confira GROQ_API_KEY no arquivo .env."
             if exc.code == 429:
-                return "O limite da API Groq foi atingido. Tente novamente mais tarde."
+                return "O limite gratuito da Groq foi atingido. Tente mais tarde."
+            if exc.code == 404:
+                return (
+                    f"Modelo Groq '{self.model}' indisponível (HTTP 404). "
+                    "Confira GROQ_MODEL no .env. Sugestão: openai/gpt-oss-20b."
+                )
             return f"Falha na consulta ao Groq (HTTP {exc.code})."
         except (URLError, TimeoutError):
             return "Não foi possível conectar à IA. Confira sua conexão com a internet."
