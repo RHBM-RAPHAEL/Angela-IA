@@ -16,6 +16,8 @@ jobs:
           python-version: "3.12"
       - name: Install test dependency
         run: python -m pip install "python-dotenv>=1,<2"
+      - name: Compile all Python modules
+        run: python -m compileall -q angela tests
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
@@ -30,6 +32,8 @@ jobs:
           python-version: "3.12"
       - name: Install local-voice dependencies
         run: python -m pip install -r requirements-voice-kokoro.txt
+      - name: Compile GUI and wake modules
+        run: python -m py_compile angela/ui.py angela/wake.py
       - name: Check Brazilian Portuguese phonemization
         shell: pwsh
         run: |

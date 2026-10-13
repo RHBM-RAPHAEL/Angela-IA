@@ -16,7 +16,7 @@ from .actions import normalize
 
 
 _WAKE_PATTERN = re.compile(
-    r"^(?:(?:oi|ola|ei)\s+)?(?:angela|anjela)(?:\b|$)[\s,!.?:;-]*(.*)$"
+    r"^(?:(?:oi|ola|ei)[,\s]+)?(?:angela|anjela)(?:\b|$)[\s,!.?:;-]*(.*)$"
 )
 
 
@@ -29,7 +29,7 @@ def extract_wake_command(text: str) -> str | None:
     # Preserve a frase original após o nome, quando possível, para a IA.
     # A remoção de acentos é usada somente para reconhecer a ativação.
     original = re.match(
-        r"^(?:(?:oi|olá|ola|ei)\s+)?(?:ângela|angela|anjela)\b[\s,!.?:;-]*(.*)$",
+        r"^(?:(?:oi|olá|ola|ei)[,\s]+)?(?:ângela|angela|anjela)\b[\s,!.?:;-]*(.*)$",
         text.strip(), flags=re.IGNORECASE,
     )
     return (original.group(1) if original else match.group(1)).strip()

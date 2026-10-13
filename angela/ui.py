@@ -136,7 +136,7 @@ class AngelaWindow:
 
     def add_message(self, sender: str, content: str) -> None:
         self.messages.configure(state="normal")
-        tag = "user" if sender == "Você" else "assistant"
+        tag = "user" if sender.startswith("Você") else "assistant"
         self.messages.insert("end", f"{sender}\n", tag)
         self.messages.insert("end", f"{content}\n\n")
         self.messages.configure(state="disabled")
