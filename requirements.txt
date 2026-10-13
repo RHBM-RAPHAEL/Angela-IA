@@ -1,0 +1,6 @@
+# Python 3.11–3.12 recomendado (Windows).
+python-dotenv>=1.0,<2
+edge-tts>=7.0,<9
+pygame>=2.6,<3
+vosk>=0.3.45,<1
+sounddevice>=0.5,<1
