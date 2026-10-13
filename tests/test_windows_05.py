@@ -105,7 +105,7 @@ class WindowsTest(unittest.TestCase):
     def test_pasta_composta_do_usuario(self):
         self.assertEqual(
             folder_from_text("Abra minha pasta de arquivos no SSD D, na pasta Imagens"),
-            r"D:\\imagens",
+            r"D:\imagens",
         )
 
     def test_pasta_composta_sem_virgula(self):
