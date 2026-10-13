@@ -27,7 +27,7 @@ class AngelaWindow:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title("Ângela AI — v0.4")
+        root.title("Ângela AI — v0.5")
         root.geometry("780x630")
         root.minsize(590, 510)
         root.configure(bg=self.BACKGROUND)
@@ -46,7 +46,7 @@ class AngelaWindow:
         )
         title.pack(fill="x", padx=22, pady=(20, 0))
         caption = tk.Label(
-            root, text="Assistente pessoal Windows  •  Protótipo 0.4",
+            root, text="Assistente pessoal Windows  •  Protótipo 0.5",
             fg=self.SUBTLE, bg=self.BACKGROUND, font=("Segoe UI", 10),
             anchor="w",
         )
@@ -128,7 +128,7 @@ class AngelaWindow:
         self.add_message(
             "Ângela",
             "Olá! Digite 'ajuda' para conhecer os comandos. "
-            "Use 'Testar voz' para verificar o áudio. Recomendo Dora (local).",
+            "Agora também procuro aplicativos instalados, abro pastas dos SSDs e posso solicitar o fechamento de janelas com confirmação. Dora continua sendo a voz padrão.",
         )
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.after(100, self.process_events)

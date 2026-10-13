@@ -33,7 +33,20 @@ jobs:
       - name: Install local-voice dependencies
         run: python -m pip install -r requirements-voice-kokoro.txt
       - name: Compile GUI and wake modules
-        run: python -m py_compile angela/ui.py angela/wake.py
+        run: python -m compileall -q angela tests
+      - name: Check Windows discovery (read-only)
+        shell: pwsh
+        run: |
+          @'
+          from angela.windows_apps import WindowsAppCatalog
+          from angela.windows_windows import enumerate_windows
+          from angela.windows_folders import folder_from_text
+          apps = WindowsAppCatalog().list_apps()
+          print("Registered apps:", len(apps))
+          print("Visible windows:", len(enumerate_windows()))
+          assert folder_from_text("Abra a pasta Imagens no SSD D") == r"D:\Imagens"
+          '@ | Set-Content -Path smoke_windows.py -Encoding utf8
+          python smoke_windows.py
       - name: Check Brazilian Portuguese phonemization
         shell: pwsh
         run: |

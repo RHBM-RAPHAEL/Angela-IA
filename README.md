@@ -1,59 +1,56 @@
-# Ângela AI
+# Ângela AI — Assistente para Windows
 
-Assistente pessoal gratuita e de código aberto para Windows, com reconhecimento de fala Vosk, voz feminina Dora/Kokoro e chat Groq opcional.
+Projeto pessoal de código aberto. A Ângela reconhece a palavra "Ângela" pelo Vosk local, responde com voz feminina Dora/Kokoro e pode consultar Groq opcionalmente.
 
-**Versão atual: protótipo 0.4.** Não acessa câmera, tela nem executa comandos irrestritos de computador.
+**Versão 0.5 — protótipo.** Ações de Windows ampliadas, mas ainda sem visão de tela, câmera, envio de WhatsApp ou automação geral por mouse.
 
-## Novidade: diga "Ângela" sem clicar em Ouvir
+## O que há de novo na v0.5
 
-A versão 0.4 acrescenta um controle explícito: **Ativar escuta por 'Ângela' (microfone contínuo)**.
+- Descobre aplicativos sem cadastro manual, consultando atalhos do Menu Iniciar, App Paths do Registro e Get-StartApps da Microsoft Store.
+- Abre aplicativos encontrados pelo nome: Chrome, Opera, WhatsApp ou outros registrados. Quando encontrar vários nomes próximos, pede para escolher.
+- Lista e pesquisa aplicativos instalados.
+- Abre pastas dos SSDs: diga "Abra a pasta Imagens no SSD D" ou informe um caminho como D:\Imagens. Valida se existe antes de abrir.
+- Lista janelas visíveis e solicita fechamento normal via WM_CLOSE, mediante confirmação explícita. Não encerra processos à força.
+- Diálogo para escolher entre programas e confirmar ou cancelar fechamento. As solicitações pendentes expiram após 90 segundos.
+- Mantém a escuta por "Ângela", Dora local, comandos anteriores, arquivos de modelo e seu .env intactos.
 
-O recurso começa **desligado**. Quando marcado:
+## Atualizar da versão 0.4 (PowerShell do VS Code)
 
-1. Diga **"Ângela"** em voz normal, aguarde o reconhecimento.
-2. Ela diz **"Oi! Estou ouvindo."**, usando a voz feminina Dora.
-3. Em até **10 segundos**, diga: **"Abra a calculadora"**.
-4. Também é possível falar diretamente: **"Ângela, abra a calculadora"**.
-5. Para parar, desmarque a opção. Ao fechar a janela, a escuta também para.
-
-A escuta é inteiramente local com o Vosk já instalado. Áudio do microfone não é salvo em arquivos. Durante a resposta da Dora, o reconhecimento contínuo é pausado para diminuir o risco de a assistente responder à própria voz. O botão manual **Ouvir (8 s)** continua disponível e assume o microfone de forma exclusiva.
-
-**Importante:** a palavra-chave usa transcrição de fala em português do Vosk, e não um detector dedicado. Em ambientes barulhentos, pode não detectar seu nome, reconhecer palavras parecidas ou disparar indevidamente. Por isso a função é opcional e fica desativada após reiniciar.
-
-## Atualizar da versão 0.3
-
-Feche a janela aberta e execute no terminal PowerShell do VS Code:
+Feche primeiro a janela da Ângela:
 
     cd "D:\RHBM TechWorks\Meus Softwares\Angela-IA"
     git pull origin main
     .\.venv\Scripts\python.exe -m unittest discover -s tests -v
     .\.venv\Scripts\python.exe -m angela
 
-**Não é necessário** reinstalar o Ollama, as bibliotecas ou os modelos de voz: usamos as instalações que já foram testadas. Seu arquivo privado .env será mantido.
+Não precisa reinstalar voz nem Ollama.
 
-## Testes no notebook
+## O que testar
 
-- Marque a opção de escuta contínua e verifique a indicação **Escutando: diga 'Ângela'**.
-- Diga **"Ângela"**; espere a Dora responder **"Oi! Estou ouvindo."**.
-- Diga **"Abre a calculadora"** antes de o tempo de espera acabar.
-- Diga **"Ângela, mude o tema do Windows para claro"**, tudo em uma frase.
-- Desmarque a escuta e tente chamar de novo: a Ângela não deve reagir.
-- Teste o botão manual Ouvir e o chat digitado para verificar que continuam funcionando.
+1. Marque "Ativar escuta por 'Ângela'".
+2. "Ângela, quais aplicativos instalados?"
+3. "Ângela, abra o Opera" — se houver Opera e Opera GX, escolha pelo número.
+4. "Ângela, abra a pasta Imagens no SSD D" — deve abrir a pasta D:\Imagens.
+5. "Ângela, quais janelas abertas?"
+6. "Ângela, feche a calculadora" — deve pedir confirmação. Teste "cancelar" e depois "sim" caso não haja trabalho não salvo.
+7. Verifique a voz Dora e os comandos anteriores.
 
-Se não reconhecer seu nome, envie o texto que aparece no chat e informe se o microfone contínuo mostrou algum erro.
+Alguns apps portáteis sem atalhos ou registro ainda podem não aparecer. O catálogo é atualizado a cada cinco minutos, ou imediatamente quando você pede para listar os aplicativos.
 
-## Recursos
+## Privacidade e limitações
 
-- Comandos locais: abrir calculadora, Bloco de Notas, Explorador, VS Code; mudar tema do Windows.
-- Reconhecimento local por microfone com Vosk português (modelo pequeno).
-- Síntese de voz feminina brasileira Dora pf_dora via Kokoro ONNX local, sem internet após a instalação.
-- Chat online opcional com Groq usando openai/gpt-oss-20b (requer chave em GROQ_API_KEY no .env).
-- Alternativas de voz: Windows SAPI (quando houver voz feminina pt-BR) e Microsoft Edge TTS (pode retornar 403).
-- Código Python/Tkinter com MIT; modelos e dependências têm suas próprias licenças.
+- Não executa comandos arbitrários de terminal. Apenas ferramentas locais implementadas e explícitas.
+- Fechar uma janela exige confirmação e envia a solicitação normal do Windows; programas podem pedir para salvar o trabalho.
+- Abrir pasta não significa abrir ou executar arquivos. A versão atual aceita caminhos de unidades locais, não caminhos de rede.
+- Mensagens como "mande WhatsApp para minha mãe" não são executadas; o envio exigirá futura integração autorizada, seleção do contato e confirmação.
+- A lista de aplicativos e janelas é consultada localmente, sem passar para a Groq.
+- Voz Dora e palavra de ativação usam bibliotecas locais; microfone contínuo começa desligado e só é ativado pelo usuário.
+- O reconhecimento do nome utiliza transcrição Vosk e ainda pode errar em ambientes barulhentos.
+- Ainda não há acesso a todos os programas, visão de tela, automação completa de interface ou controle da câmera.
 
-## Primeira instalação
+## Instalação nova
 
-Python 3.12 e Git são recomendados:
+Pré-requisitos: Git, Python 3.12, Windows 10/11.
 
     git clone https://github.com/RHBM-RAPHAEL/Angela-IA.git
     cd Angela-IA
@@ -65,17 +62,19 @@ Python 3.12 e Git são recomendados:
     .\.venv\Scripts\python.exe -m angela.download_kokoro
     .\.venv\Scripts\python.exe -m angela
 
-## Privacidade e segurança
+## Arquitetura da v0.5
 
-- A escuta contínua começa desligada; o usuário decide quando permitir o microfone aberto.
-- O reconhecimento da palavra-chave é processado localmente e não salva gravações.
-- A Dora fala localmente. Apenas o texto de pedidos não locais pode ser enviado à Groq se houver chave configurada.
-- O aplicativo pausa o reconhecedor durante a própria fala e durante tarefas. Isso **reduz**, mas não elimina totalmente, falsos acionamentos.
-- Não executa comandos arbitrários produzidos pela IA: há uma lista restrita de ações no módulo angela/actions.py.
-- Senhas, chaves de API, .env e modelos de áudio não entram no repositório público.
+- angela/windows_apps.py: inventário e abertura dos apps registrados.
+- angela/windows_folders.py: caminhos dos SSDs e abertura de pastas.
+- angela/windows_windows.py: janelas visíveis e WM_CLOSE.
+- angela/windows_controller.py: comandos, escolhas e confirmações.
+- angela/assistant.py: roteamento de pedidos para ferramentas locais e chat.
+- angela/ui.py, wake.py, speech.py: janela, escuta por nome e voz Dora.
 
-## Testes de desenvolvimento
+Executar testes:
 
     .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 
-Os testes automatizados simulam a transcrição e a lógica de ativação; o funcionamento real precisa ser validado com microfone físico. A integração com Flutter, a câmera e automações mais amplas serão consideradas após estabilizar a ativação.
+Os testes no GitHub simulam as ações. O funcionamento com apps e janelas reais deve ser validado no seu notebook.
+
+Licença MIT. Dependências e modelos mantêm suas respectivas licenças.
