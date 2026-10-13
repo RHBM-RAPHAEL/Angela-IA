@@ -102,6 +102,22 @@ class WindowsTest(unittest.TestCase):
         self.assertEqual(self.controller.process("Abra a pasta Imagens no SSD D"), "Pasta aberta")
         self.assertEqual(self.opened, [r"D:\imagens"])
 
+    def test_pasta_composta_do_usuario(self):
+        self.assertEqual(
+            folder_from_text("Abra minha pasta de arquivos no SSD D, na pasta Imagens"),
+            r"D:\\imagens",
+        )
+
+    def test_pasta_composta_sem_virgula(self):
+        self.assertEqual(
+            folder_from_text("Abra minha pasta de arquivos no SSD D na pasta Imagens"),
+            r"D:\imagens",
+        )
+
+    def test_downloads_pelo_controller(self):
+        self.controller.process("Abra meus downloads")
+        self.assertEqual(self.opened, ["shell:Downloads"])
+
     def test_nao_adivinha_pasta_sem_unidade(self):
         msg = self.controller.process("Abre a pasta fotos especiais")
         self.assertIn("Indique a unidade", msg)

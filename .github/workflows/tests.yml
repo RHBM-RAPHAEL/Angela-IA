@@ -44,7 +44,7 @@ jobs:
           apps = WindowsAppCatalog().list_apps()
           print("Registered apps:", len(apps))
           print("Visible windows:", len(enumerate_windows()))
-          assert folder_from_text("Abra a pasta Imagens no SSD D") == r"D:\Imagens"
+          assert folder_from_text("Abra a pasta Imagens no SSD D").lower() == r"d:\imagens"
           '@ | Set-Content -Path smoke_windows.py -Encoding utf8
           python smoke_windows.py
       - name: Check Brazilian Portuguese phonemization

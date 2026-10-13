@@ -38,21 +38,33 @@ def folder_from_text(message: str) -> str | None:
     if not drive:
         drive = re.search(r"\bletra\s+([a-z])\b", text)
 
-    folder = re.search(
+    folders = list(re.finditer(
         r"\bpasta\s+(?:de\s+)?(?:arquivos\s+)?(?:chamada\s+)?"
         r"([a-z0-9][a-z0-9 _-]{0,70})",
         text,
-    )
+    ))
 
     if drive:
         letter = drive.group(1).upper()
-        if folder:
-            name = folder.group(1)
-            # 'pasta Imagens no SSD D' -> remove as preposições e unidades.
+        nested = re.findall(
+            r"\b(?:na|no|dentro da)\s+pasta\s+([a-z0-9][a-z0-9 _-]{0,70})",
+            text,
+        )
+        if nested:
+            chosen = re.split(
+                r"\s+(?:no|na|do|da|dentro)\b", nested[-1], 1
+            )[0].strip()
+            if chosen:
+                return f"{letter}:\\{chosen}"
+
+        # Usa a última pasta explicitamente mencionada: "pasta de arquivos
+        # no SSD D, na pasta Imagens" resolve para D:\\Imagens.
+        for item in reversed(folders):
+            name = item.group(1).strip()
             name = re.split(
                 r"\s+(?:no|na|do|da|dentro|localizad[oa]|que fica)\b", name, 1
             )[0].strip()
-            if name and name not in {"arquivos", "ssd", "disco", "unidade"}:
+            if name and not name.startswith(("no ", "na ", "do ", "da ")) and name not in {"arquivos", "ssd", "disco", "unidade"}:
                 return f"{letter}:\\{name}"
         return f"{letter}:\\"
 

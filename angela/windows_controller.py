@@ -16,7 +16,7 @@ from .windows_folders import folder_from_text, open_local_folder
 from .windows_windows import WindowInfo, enumerate_windows, matching_windows, request_close_window
 
 _OPEN = re.compile(
-    r"^(?:abra|abre|abrir|inicie|inicia|execute|executa|rode|rodar)\s+(.+)$"
+    r"^(?:abra|abre|abrir|inicie|inicia)\s+(.+)$"
 )
 _CLOSE = re.compile(
     r"^(?:feche|fecha|fechar|encerre|encerra)\s+(.+)$"
@@ -59,7 +59,7 @@ def command_kind(text: str) -> tuple[str, str] | None:
     open_match = _OPEN.match(text)
     if open_match:
         raw = open_match.group(1)
-        if "pasta" in raw or re.search(r"\b[a-z]:[/\\]", raw):
+        if "pasta" in raw or any(x in raw for x in ("downloads", "documentos", "area de trabalho")) or re.search(r"\b[a-z]:[/\\]", raw):
             return "open_folder", text
         if "ssd " in raw or "disco " in raw or "unidade " in raw:
             return "open_folder", text
@@ -214,6 +214,9 @@ class WindowsController:
             if reply in {"sim", "confirmar", "confirmo", "pode", "pode fechar", "fechar"}:
                 self.pending = None
                 item = pending.items[0]
+                if not any(current.hwnd == item.hwnd and current.title == item.title
+                           for current in self.windows()):
+                    return "A janela mudou ou foi fechada. Peça novamente se necessário."
                 if self.close(item):
                     return (f"Solicitei ao Windows que feche '{item.title}'. "
                             "Se houver conteúdo não salvo, o aplicativo poderá pedir confirmação.")
