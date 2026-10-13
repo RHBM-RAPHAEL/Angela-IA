@@ -8,6 +8,7 @@ from tkinter import scrolledtext
 
 from .assistant import AssistantEngine
 from .speech import VOICE_TEST_SENTENCE
+from .wake import WakeListener
 
 
 class AngelaWindow:
@@ -26,15 +27,17 @@ class AngelaWindow:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title("Ângela AI — v0.3")
-        root.geometry("760x600")
-        root.minsize(580, 480)
+        root.title("Ângela AI — v0.4")
+        root.geometry("780x630")
+        root.minsize(590, 510)
         root.configure(bg=self.BACKGROUND)
         self.engine = AssistantEngine()
         self.events: queue.Queue[tuple[str, str]] = queue.Queue()
+        self.wake_listener = WakeListener(lambda kind, value: self.events.put((kind, value)))
+        self.wake_enabled = tk.BooleanVar(value=False)
         self.busy = False
         self.voice_enabled = tk.BooleanVar(value=True)
-        self.voice_provider = tk.StringVar(value="Automático (Dora → Windows → Francisca)")
+        self.voice_provider = tk.StringVar(value="Dora (local)")
         self.status = tk.StringVar(value="Pronta para conversar")
 
         title = tk.Label(
@@ -43,7 +46,7 @@ class AngelaWindow:
         )
         title.pack(fill="x", padx=22, pady=(20, 0))
         caption = tk.Label(
-            root, text="Assistente pessoal Windows  •  Protótipo 0.3",
+            root, text="Assistente pessoal Windows  •  Protótipo 0.4",
             fg=self.SUBTLE, bg=self.BACKGROUND, font=("Segoe UI", 10),
             anchor="w",
         )
@@ -98,6 +101,16 @@ class AngelaWindow:
         )
         self.test_voice_button.pack(side="right")
 
+        wake_row = tk.Frame(root, bg=self.BACKGROUND)
+        wake_row.pack(fill="x", padx=22, pady=(2, 3))
+        tk.Checkbutton(
+            wake_row, text="Ativar escuta por 'Ângela' (microfone contínuo)",
+            variable=self.wake_enabled, command=self.on_toggle_wake,
+            bg=self.BACKGROUND, fg=self.SUBTLE, selectcolor=self.SURFACE,
+            activebackground=self.BACKGROUND, activeforeground=self.TEXT,
+            font=("Segoe UI", 10),
+        ).pack(side="left")
+
         provider_row = tk.Frame(root, bg=self.BACKGROUND)
         provider_row.pack(fill="x", padx=22, pady=(2, 12))
         tk.Label(
@@ -117,6 +130,7 @@ class AngelaWindow:
             "Olá! Digite 'ajuda' para conhecer os comandos. "
             "Use 'Testar voz' para verificar o áudio. Recomendo Dora (local).",
         )
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.after(100, self.process_events)
         self.entry.focus_set()
 
@@ -133,7 +147,45 @@ class AngelaWindow:
         button_state = "disabled" if state else "normal"
         for button in (self.send_button, self.listen_button, self.test_voice_button):
             button.configure(state=button_state)
-        self.status.set(status if state else "Pronta para conversar")
+        self.status.set(status if state else self.idle_status())
+
+    def idle_status(self) -> str:
+        return "Escutando: diga 'Ângela'" if self.wake_enabled.get() else "Pronta para conversar"
+
+    def on_toggle_wake(self) -> None:
+        if self.wake_enabled.get():
+            if self.busy:
+                self.wake_enabled.set(False)
+                self.add_message("Ângela", "Espere minha resposta terminar antes de ativar a escuta.")
+                return
+            if self.wake_listener.start():
+                self.status.set("Iniciando microfone contínuo...")
+            else:
+                self.wake_listener.resume()
+                self.status.set(self.idle_status())
+        else:
+            self.wake_listener.stop()
+            self.status.set(self.idle_status())
+
+    def restore_wake(self, follow_up: bool = False) -> None:
+        if not self.wake_enabled.get() or self.busy:
+            return
+        if self.wake_listener.running:
+            self.wake_listener.resume(follow_up=follow_up)
+        else:
+            self.wake_listener.start()
+        self.status.set("Aguardando comando (10 s)..." if follow_up else self.idle_status())
+
+    def begin_request(self, message: str) -> None:
+        if self.wake_listener.running:
+            self.wake_listener.pause()
+        self.set_busy(True, "Processando...")
+        threading.Thread(target=self.reply_worker, args=(message,), daemon=True).start()
+
+    def on_close(self) -> None:
+        self.wake_enabled.set(False)
+        self.wake_listener.stop()
+        self.root.destroy()
 
     def on_send(self, event=None) -> None:
         if self.busy:
@@ -143,8 +195,7 @@ class AngelaWindow:
             return
         self.entry.delete(0, "end")
         self.add_message("Você", message)
-        self.set_busy(True, "Processando...")
-        threading.Thread(target=self.reply_worker, args=(message,), daemon=True).start()
+        self.begin_request(message)
 
     def reply_worker(self, message: str) -> None:
         try:
@@ -156,6 +207,11 @@ class AngelaWindow:
     def on_listen(self) -> None:
         if self.busy:
             return
+        if self.wake_listener.running:
+            self.wake_listener.stop()
+            if self.wake_listener.running:
+                self.add_message("Ângela", "Aguarde a liberação do microfone.")
+                return
         self.set_busy(True, "Escutando por até 8 segundos...")
         threading.Thread(target=self.listen_worker, daemon=True).start()
 
@@ -173,6 +229,8 @@ class AngelaWindow:
     def on_test_voice(self) -> None:
         if self.busy:
             return
+        if self.wake_listener.running:
+            self.wake_listener.pause()
         self.set_busy(True, "Testando a saída de voz...")
         provider = self.selected_provider()
         threading.Thread(
@@ -181,13 +239,13 @@ class AngelaWindow:
             daemon=True,
         ).start()
 
-    def voice_worker(self, text: str, provider: str, test: bool = False) -> None:
+    def voice_worker(self, text: str, provider: str, test: bool = False, ack: bool = False) -> None:
         try:
             from .speech import speak
             used_voice = speak(text, provider=provider)
-            self.events.put(("voice_test_ok" if test else "voice_ok", used_voice))
+            self.events.put(("voice_ack_ok" if ack else "voice_test_ok" if test else "voice_ok", used_voice))
         except Exception as exc:
-            self.events.put(("voice_test_error" if test else "voice_error", str(exc)))
+            self.events.put(("voice_ack_error" if ack else "voice_test_error" if test else "voice_error", str(exc)))
 
     def process_events(self) -> None:
         try:
@@ -195,37 +253,79 @@ class AngelaWindow:
                 kind, data = self.events.get_nowait()
                 if kind == "answer":
                     self.add_message("Ângela", data)
-                    self.set_busy(False)
                     if self.voice_enabled.get():
-                        provider = self.selected_provider()
+                        self.status.set("Ângela falando...")
                         threading.Thread(
                             target=self.voice_worker,
-                            args=(data, provider),
+                            args=(data, self.selected_provider()),
                             daemon=True,
                         ).start()
+                    else:
+                        self.set_busy(False)
+                        self.restore_wake()
                 elif kind == "heard":
                     self.set_busy(False)
                     if data:
-                        self.entry.insert(0, data)
-                        self.on_send()
+                        self.add_message("Você (voz)", data)
+                        self.begin_request(data)
                     else:
-                        self.status.set("Nenhuma fala compreendida. Tente novamente.")
+                        self.status.set("Nenhuma fala compreendida.")
+                        self.restore_wake()
                 elif kind == "error":
-                    self.set_busy(False)
                     self.add_message("Ângela", data)
-                elif kind == "voice_ok":
-                    self.status.set(f"Voz: {data}")
-                elif kind == "voice_test_ok":
                     self.set_busy(False)
+                    self.restore_wake()
+                elif kind == "wake_ready":
+                    if self.wake_enabled.get() and not self.busy:
+                        self.status.set(self.idle_status())
+                elif kind == "wake_activated":
+                    if not self.wake_enabled.get() or self.busy:
+                        continue
+                    self.wake_listener.pause()
+                    self.add_message("Ângela", "Oi! Estou ouvindo.")
+                    if self.voice_enabled.get():
+                        self.set_busy(True, "Ângela respondendo...")
+                        threading.Thread(
+                            target=self.voice_worker,
+                            args=("Oi! Estou ouvindo.", self.selected_provider(), False, True),
+                            daemon=True,
+                        ).start()
+                    else:
+                        self.restore_wake(follow_up=True)
+                elif kind == "wake_command":
+                    if not self.wake_enabled.get() or self.busy:
+                        continue
+                    self.add_message("Você (voz)", data)
+                    self.begin_request(data)
+                elif kind == "wake_timeout":
+                    if self.wake_enabled.get() and not self.busy:
+                        self.status.set(self.idle_status())
+                elif kind == "wake_error":
+                    if self.wake_enabled.get():
+                        self.wake_enabled.set(False)
+                        self.wake_listener.stop()
+                        self.add_message("Ângela", data)
+                        self.status.set("Escuta desativada: confira o microfone.")
+                elif kind in ("voice_ack_ok", "voice_ack_error"):
+                    if kind == "voice_ack_error":
+                        self.add_message("Ângela", f"Falha de voz: {data}")
+                    self.set_busy(False)
+                    self.restore_wake(follow_up=True)
+                elif kind == "voice_ok":
+                    self.set_busy(False)
+                    self.restore_wake()
+                elif kind == "voice_test_ok":
                     self.add_message(
-                        "Ângela", f"Teste de voz concluído usando: {data}. "
-                        "Se você não ouviu, confira o volume e a saída de som do Windows.",
+                        "Ângela", f"Teste concluído com: {data}. "
+                        "Se não ouviu, confira a saída de som do Windows.",
                     )
+                    self.set_busy(False)
+                    self.restore_wake()
                 elif kind in {"voice_error", "voice_test_error"}:
-                    if kind == "voice_test_error":
-                        self.set_busy(False)
                     self.add_message("Ângela", f"Falha na saída de voz: {data}")
-                    self.status.set("Falha na voz — confira a mensagem acima.")
+                    self.set_busy(False)
+                    self.restore_wake()
+                # wake_stopped é apenas informativo.
         except queue.Empty:
             pass
         self.root.after(100, self.process_events)
