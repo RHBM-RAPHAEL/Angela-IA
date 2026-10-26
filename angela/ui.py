@@ -7,16 +7,17 @@ import tkinter as tk
 from tkinter import scrolledtext
 
 from .assistant import AssistantEngine
+from .hud import AngelaHUD
 from .speech import VOICE_TEST_SENTENCE
 from .wake import WakeListener
 
 
 class AngelaWindow:
-    BACKGROUND = "#0b1120"
-    SURFACE = "#151f33"
+    BACKGROUND = "#07111f"
+    SURFACE = "#101e2c"
     TEXT = "#edf3ff"
     SUBTLE = "#9bb0cd"
-    ACCENT = "#7c9dff"
+    ACCENT = "#3acfe8"
 
     PROVIDERS = {
         "Automático (Dora → Windows → Francisca)": "auto",
@@ -27,9 +28,9 @@ class AngelaWindow:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title("Ângela AI — v0.5")
-        root.geometry("780x630")
-        root.minsize(590, 510)
+        root.title("Ângela AI — v0.6 HUD")
+        root.geometry("880x790")
+        root.minsize(650, 680)
         root.configure(bg=self.BACKGROUND)
         self.engine = AssistantEngine()
         self.events: queue.Queue[tuple[str, str]] = queue.Queue()
@@ -39,6 +40,7 @@ class AngelaWindow:
         self.voice_enabled = tk.BooleanVar(value=True)
         self.voice_provider = tk.StringVar(value="Dora (local)")
         self.status = tk.StringVar(value="Pronta para conversar")
+        self.visual_state = "idle"
 
         title = tk.Label(
             root, text="ÂNGELA  /  AI", fg=self.TEXT, bg=self.BACKGROUND,
@@ -46,11 +48,14 @@ class AngelaWindow:
         )
         title.pack(fill="x", padx=22, pady=(20, 0))
         caption = tk.Label(
-            root, text="Assistente pessoal Windows  •  Protótipo 0.5",
+            root, text="RHBM TECHWORKS  //  ASSISTENTE PESSOAL  //  HUD 0.6",
             fg=self.SUBTLE, bg=self.BACKGROUND, font=("Segoe UI", 10),
             anchor="w",
         )
-        caption.pack(fill="x", padx=23, pady=(0, 15))
+        caption.pack(fill="x", padx=23, pady=(0, 9))
+
+        self.hud = AngelaHUD(root, state_provider=lambda: self.visual_state)
+        self.hud.pack(fill="x", padx=22, pady=(0, 9))
 
         self.messages = scrolledtext.ScrolledText(
             root, wrap=tk.WORD, bg=self.SURFACE, fg=self.TEXT,
@@ -148,6 +153,7 @@ class AngelaWindow:
         for button in (self.send_button, self.listen_button, self.test_voice_button):
             button.configure(state=button_state)
         self.status.set(status if state else self.idle_status())
+        self.visual_state = ("listening" if "Escutando" in status else "speaking" if "voz" in status.lower() else "processing") if state else ("listening" if self.wake_enabled.get() else "idle")
 
     def idle_status(self) -> str:
         return "Escutando: diga 'Ângela'" if self.wake_enabled.get() else "Pronta para conversar"
@@ -160,6 +166,7 @@ class AngelaWindow:
                 return
             if self.wake_listener.start():
                 self.status.set("Iniciando microfone contínuo...")
+                self.visual_state = "listening"
             else:
                 self.wake_listener.resume()
                 self.status.set(self.idle_status())
