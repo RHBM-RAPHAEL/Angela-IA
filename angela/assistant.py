@@ -22,6 +22,10 @@ from .screen_vision import (
     VisionRequest,
 )
 from .camera_vision import parse_camera_request, analyze_camera
+from .result_routing import plan_result_request
+from .weather_result import get_weather, WeatherError
+from urllib.parse import quote
+import webbrowser
 import time
 
 HELP_MESSAGE = (
@@ -31,6 +35,8 @@ HELP_MESSAGE = (
     "Posso também analisar a janela ativa, a tela ou tirar uma foto pela "
     "webcam sob demanda, sempre pedindo confirmação antes de enviar "
     "qualquer imagem à IA Groq. "
+    "Também posso mostrar previsão do tempo, vídeos do YouTube e respostas "
+    "em janelas próprias, ou abrir pesquisas no navegador. "
     "Se configurar a chave Groq, também podemos conversar sobre outros assuntos."
 )
 
@@ -47,6 +53,7 @@ class AssistantEngine:
         self.clarification = CommandClarification()
         self.last_interpretation = None
         self.last_panel = None
+        self.last_result_view = None
         self.last_execution = False
         self._vision_pending: tuple[VisionRequest, float] | None = None
         # Recebe uma função de interface da VoiceCoordinator, sem acoplar Qt.
@@ -64,6 +71,7 @@ class AssistantEngine:
         message = message.strip()
         heard_message = message
         self.last_panel = None
+        self.last_result_view = None
         self.last_execution = False
         self.last_interpretation = None
         if not message:
@@ -130,6 +138,53 @@ class AssistantEngine:
         if clock_request(message):
             record('local_clock_requested')
             return local_clock_reply()
+
+        # Pedidos de visualizacao usam roteador local, antes de um plano de IA
+        # que poderia confundir "mostre um video" com "abra um programa".
+        visual = plan_result_request(message)
+        if visual is not None:
+            record('result_route', kind=visual.kind)
+            if visual.kind == 'voice':
+                return local_clock_reply()
+            if visual.kind == 'weather':
+                try:
+                    weather = get_weather(visual.subject)
+                except WeatherError as exc:
+                    return str(exc)
+                self.last_result_view = {
+                    'kind': 'weather', 'title': weather.title,
+                    'subtitle': weather.summary, 'text': weather.details,
+                    'source': weather.source,
+                }
+                return weather.summary + ' Mostrei os detalhes na janela.'
+            if visual.kind == 'video':
+                self.last_result_view = {
+                    'kind': 'video', 'title': 'Vídeos · ' + visual.subject[:90],
+                    'subtitle': 'Resultado do YouTube; selecione o vídeo desejado.',
+                    'url': visual.url, 'source': 'Conteúdo disponibilizado pelo YouTube',
+                }
+                return 'Abri uma janela com o vídeo ou a pesquisa do YouTube.'
+            if visual.kind in {'browser', 'browser_images'}:
+                if not visual.subject:
+                    return 'Qual assunto você quer pesquisar na internet?'
+                url = 'https://www.google.com/search?q=' + quote(visual.subject)
+                if visual.kind == 'browser_images':
+                    url += '&tbm=isch'
+                if not webbrowser.open(url):
+                    return 'Não consegui abrir a pesquisa no navegador.'
+                return 'Abri a pesquisa de imagens no navegador.' if visual.kind == 'browser_images' else 'Abri a pesquisa no navegador.'
+            # Conteudo informativo longo: janela de texto leve e fala resumida.
+            result = self.chat.ask(message)
+            if not isinstance(result, str) or not result.strip():
+                return 'Não consegui encontrar uma resposta para mostrar.'
+            self.last_result_view = {
+                'kind': 'text', 'title': 'Ângela · ' + visual.subject[:90],
+                'subtitle': 'Resposta da assistente', 'text': result[:7000],
+                'source': 'Resposta gerada por IA. Verifique informações importantes.',
+            }
+            from .command_quality import speech_summary
+            return speech_summary(result, limit=190)
+
         clarified, new_message = self.clarification.resolve(message)
         if clarified:
             if not new_message or not new_message.startswith(('abra ', 'feche ')):

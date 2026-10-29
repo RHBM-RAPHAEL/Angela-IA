@@ -51,6 +51,7 @@ class VoiceCoordinator:
         self.conversation_closed = False
         self.trace_id = None
         self.on_panel = lambda payload: None
+        self.on_result_view = lambda payload: None
         self.on_transcript = lambda payload: None
         self.on_understanding = lambda text: None
         self.on_reply = lambda payload: None
@@ -157,11 +158,14 @@ class VoiceCoordinator:
                     interpretation = self.engine.last_interpretation
                     reportable = bool(self.engine.last_execution)
                     panel = self.engine.last_panel
+                    result_view = self.engine.last_result_view
                 if interpretation:
                     self._emit_if_current(epoch, 'understanding', interpretation)
                 self._emit_if_current(epoch, 'execution_reportable', reportable)
                 if panel is not None:
                     self._emit_if_current(epoch, 'panel', panel)
+                if result_view is not None:
+                    self._emit_if_current(epoch, 'result_view', result_view)
                 record('command_result', reply=reply, duration_ms=round((time.perf_counter()-started)*1000))
                 print('ANGELA_TIMING reply_ms', round((time.perf_counter()-started)*1000), flush=True)
                 print('ANGELA_COMMAND_RESULT', repr(reply[:160]), flush=True)
@@ -184,6 +188,12 @@ class VoiceCoordinator:
                 self._next_reportable = bool(value)
             elif kind == 'panel':
                 self.on_panel(value)
+            elif kind == 'result_view' and self.active:
+                try:
+                    self.on_result_view(value)
+                except Exception as exc:
+                    # Falha na janela nao pode interromper TTS ou escuta.
+                    record('result_view_failure', error_type=type(exc).__name__)
             elif kind == "voice_level":
                 self.on_voice_level(value)
             elif kind == "mic_level":

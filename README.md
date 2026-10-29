@@ -152,3 +152,22 @@ Windows). O backend reutiliza o Qt Multimedia já instalado.
 
 Leia [o guia da visão pela webcam](docs/visao-webcam.md) antes de
 compartilhar imagens pessoais. A visão de tela segue funcionando separadamente.
+
+
+## Janelas inteligentes sob demanda (29/10/2026)
+
+Pedidos explícitos como "me mostre a previsão do tempo", "mostre um vídeo
+de Python", "mostre fotos de pugs" ou "mostre uma explicação sobre Python"
+agora passam por um roteador de resultados: ele decide entre falar, mostrar
+uma janela Qt reutilizável ou usar o navegador para pesquisas/imagens.
+
+A previsão consulta Open-Meteo em tempo real (sem utilizar GPS); a cidade
+padrão pode ser definida em .env com ANGELA_WEATHER_CITY=Itirapina.
+Para vídeos, a janela usa YouTube, sem reprodução automática e com opção
+"Abrir no navegador" quando não houver suporte à incorporação.
+A hora continua sendo respondida somente por voz. O conteúdo gerado por IA
+é texto plano, sem executar códigos, e a visão de tela/câmera continua
+exigindo autorização por captura.
+
+Veja docs/janelas-dinamicas.md. A interface completa não foi iniciada
+durante os testes da implementação: exige validação visual posterior.

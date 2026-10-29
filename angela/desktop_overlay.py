@@ -48,6 +48,8 @@ class HologramOverlay(QWebEngineView):
         self.voice_coordinator = None
         self.feedback_candidate = ("", "")
         self.pending_confirmation_command = None
+        self.result_windows = {}
+        self._next_result_id = 0
         self.voice_timer = QTimer(self)
         self.voice_timer.timeout.connect(self._poll_voice)
         self.setPage(TransparentPage(self))
@@ -117,6 +119,30 @@ class HologramOverlay(QWebEngineView):
             "window.angelaShowPanel(" + json.dumps(payload, ensure_ascii=False) + ")"
         )
         print("ANGELA_PANEL", len(payload.get("items", [])), flush=True)
+
+    def show_result_view(self, payload):
+        """Executado somente na thread grafica atraves do poll do coordenador."""
+        from .result_window import ResultWindow
+        if len(self.result_windows) >= 3:
+            oldest_key = next(iter(self.result_windows))
+            older = self.result_windows.pop(oldest_key)
+            older.close()
+        try:
+            window = ResultWindow(payload)
+        except (ValueError, RuntimeError, OSError) as exc:
+            print("ANGELA_RESULT_WINDOW_ERROR", type(exc).__name__, flush=True)
+            self.chat_panel.status.setText("Não consegui abrir a janela de resultados")
+            return
+        self._next_result_id += 1
+        key = self._next_result_id
+        self.result_windows[key] = window
+        window.destroyed.connect(
+            lambda _=None, key=key: self.result_windows.pop(key, None)
+        )
+        window.show()
+        window.raise_()
+        window.activateWindow()
+        print("ANGELA_RESULT_WINDOW_SHOWN", str(payload.get("kind", ""))[:20], flush=True)
 
     def show_transcript(self, text):
         response = normalize(text).strip(' .,!?')
@@ -214,6 +240,7 @@ class HologramOverlay(QWebEngineView):
             self.voice_coordinator.on_microphone_status = self.set_microphone_status
             self.voice_coordinator.on_camera_status = self.set_camera_status
             self.voice_coordinator.on_panel = self.show_panel
+            self.voice_coordinator.on_result_view = self.show_result_view
             self.voice_coordinator.on_transcript = self.show_transcript
             self.voice_coordinator.on_understanding = self.show_understanding
             self.voice_coordinator.on_reply = self.show_reply
@@ -224,6 +251,9 @@ class HologramOverlay(QWebEngineView):
         self.voice_coordinator.start()
 
     def closeEvent(self, event):
+        for window in list(self.result_windows.values()):
+            window.close()
+        self.result_windows.clear()
         self.voice_timer.stop()
         if self.voice_coordinator is not None:
             self.voice_coordinator.stop()
