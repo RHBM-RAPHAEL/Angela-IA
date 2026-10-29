@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import re
 from functools import lru_cache
 import json
 import os
@@ -16,9 +17,11 @@ import time
 
 from .download_model import MODEL_PATH
 
-VOICE_TEST_SENTENCE = "Olá! Eu sou a Ângela. Este é um teste da minha voz feminina."
-_VOICE = "pt-BR-FranciscaNeural"
+VOICE_TEST_SENTENCE = "Olá! Eu sou a Angela. Este é um teste da minha voz feminina."
+_VOICE = "pt-BR-ThalitaNeural"
 _SPEAK_LOCK = threading.Lock()
+_EDGE_CACHE = {}
+_EDGE_CACHE_LOCK = threading.Lock()
 
 
 class SpeechError(RuntimeError):
@@ -68,15 +71,56 @@ def _speak_kokoro(text: str) -> str:
     return speak_dora(text)
 
 
-def _speak_edge(text: str) -> str:
-    """Online: usa Francisca quando solicitada ou como última alternativa."""
+def _speak_edge_fast(text: str) -> str:
+    """Speak each completed neural segment immediately, preserving Thalita."""
+    import io
+    import pygame
+    from .streaming_tts import synthesize_segments, split_phrases
+
+    initialized = False
+    try:
+        pygame.mixer.init()
+        initialized = True
+
+        def play_segment(data: bytes, index: int):
+            started = time.perf_counter()
+            pygame.mixer.music.load(io.BytesIO(data), "mp3")
+            pygame.mixer.music.play()
+            if index == 0:
+                print("ANGELA_FIRST_AUDIO_MS",
+                      round((time.perf_counter() - begin) * 1000), flush=True)
+            while pygame.mixer.music.get_busy():
+                time.sleep(0.03)
+            pygame.mixer.music.unload()
+
+        begin = time.perf_counter()
+        synthesize_segments(text, _VOICE, play_segment)
+    finally:
+        if initialized:
+            pygame.mixer.music.stop()
+            pygame.mixer.quit()
+    return "Thalita (streaming por frases)"
+
+
+def _speak_edge(text: str, on_level=None) -> str:
+    """Geração neural online da voz Thalita, com cache de frases curtas."""
     import edge_tts
     import pygame
 
     with tempfile.TemporaryDirectory(prefix="angela_voice_") as temp_dir:
         output = Path(temp_dir) / "fala.mp3"
         try:
-            asyncio.run(edge_tts.Communicate(text, _VOICE).save(str(output)))
+            with _EDGE_CACHE_LOCK:
+                cached = _EDGE_CACHE.get(text)
+            if cached is None:
+                asyncio.run(edge_tts.Communicate(text, _VOICE).save(str(output)))
+                if len(text) <= 100:
+                    with _EDGE_CACHE_LOCK:
+                        if len(_EDGE_CACHE) >= 32:
+                            _EDGE_CACHE.clear()
+                        _EDGE_CACHE[text] = output.read_bytes()
+            else:
+                output.write_bytes(cached)
         except Exception as exc:
             # Não mostrar URLs de WebSocket com tokens temporários no chat.
             if "403" in str(exc):
@@ -92,6 +136,7 @@ def _speak_edge(text: str) -> str:
         if not output.is_file() or output.stat().st_size == 0:
             raise SpeechError("O serviço Edge TTS não retornou áudio.")
 
+        print('ANGELA_TTS_AUDIO_READY', len(output.read_bytes()), flush=True)
         initialized = False
         loaded = False
         try:
@@ -101,15 +146,25 @@ def _speak_edge(text: str) -> str:
             loaded = True
             pygame.mixer.music.set_volume(1.0)
             pygame.mixer.music.play()
+            if on_level is not None:
+                from .voice_envelope import mp3_envelope
+                levels = mp3_envelope(output)
+                started = time.monotonic()
             while pygame.mixer.music.get_busy():
+                if on_level is not None:
+                    elapsed = max(0.0, time.monotonic() - started)
+                    index = min(int(elapsed * 20), len(levels) - 1)
+                    on_level(levels[index])
                 time.sleep(0.05)
+            if on_level is not None:
+                on_level(0.0)
         finally:
             if initialized:
                 pygame.mixer.music.stop()
                 if loaded:
                     pygame.mixer.music.unload()
                 pygame.mixer.quit()
-    return "Francisca (português brasileiro, online)"
+    return "Thalita (português brasileiro, online)"
 
 
 # Nunca interpolar texto ditado/gerado no código executado pelo PowerShell.
@@ -197,8 +252,8 @@ def _friendly_error(provider: str, exc: Exception) -> str:
     return f"Dora: falha de síntese ({type(exc).__name__})."
 
 
-def speak(text: str, provider: str = "auto") -> str:
-    """Voz Dora local em primeiro lugar; alternativas explícitas e diagnóstico."""
+def speak(text: str, provider: str = "auto", on_level=None) -> str:
+    """Voz Thalita online em primeiro lugar, com alternativas offline."""
     if provider not in {"auto", "kokoro", "edge", "windows"}:
         raise ValueError("Provedor de voz inválido.")
     text = text.strip()
@@ -206,14 +261,15 @@ def speak(text: str, provider: str = "auto") -> str:
         return "Nenhum texto informado."
     with _SPEAK_LOCK:
         errors = []
-        order = ("kokoro", "windows", "edge") if provider == "auto" else (provider,)
+        # Nunca trocar silenciosamente a voz aprovada por uma voz SAPI.
+        order = ("edge",) if provider == "auto" else (provider,)
         for current in order:
             try:
                 if current == "kokoro":
                     return _speak_kokoro(text[:1800])
                 if current == "windows":
                     return _speak_windows(text[:1800])
-                return _speak_edge(text[:1800])
+                return _speak_edge(text[:1800], on_level=on_level) if on_level is not None else _speak_edge(text[:1800])
             except Exception as exc:
                 errors.append(_friendly_error(current, exc))
 

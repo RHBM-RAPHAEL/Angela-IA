@@ -1,4 +1,4 @@
-"""Ativação opcional e local pela palavra 'Ângela' com Vosk.
+"""Ativação opcional e local pela palavra 'Angela' com Vosk.
 
 A escuta contínua é DESLIGADA por padrão. Não grava áudio em disco.
 Nunca executa comandos diretamente: somente emite textos para a interface.
@@ -88,6 +88,8 @@ class WakeListener:
         self._paused = threading.Event()
         self._reset = threading.Event()
         self._followup = threading.Event()
+        self._listening_for_command = False
+        self._mic_peak = 0.0
         self._thread: threading.Thread | None = None
         self._state_lock = threading.Lock()
 
@@ -111,6 +113,7 @@ class WakeListener:
 
     def pause(self) -> None:
         self._paused.set()
+        self._listening_for_command = False
 
     def resume(self, follow_up: bool = False) -> None:
         # Reseta o reconhecedor para evitar áudio antigo/self-trigger.
@@ -133,6 +136,12 @@ class WakeListener:
         def callback(indata, frames, timestamp, status):
             if self._stop.is_set() or self._paused.is_set():
                 return
+            # Read the existing Vosk microphone stream: no second mic device.
+            if self._listening_for_command:
+                import audioop
+                level = min(1.0, audioop.rms(bytes(indata), 2) / 9000.0)
+                self._mic_peak = max(level, self._mic_peak * 0.55)
+                self.on_event('mic_level', self._mic_peak)
             try:
                 audio.put_nowait(bytes(indata))
             except queue.Full:
@@ -151,7 +160,8 @@ class WakeListener:
                 )
 
             model = _get_model(str(MODEL_PATH))
-            recognizer = KaldiRecognizer(model, 16000)
+            wake_grammar = json.dumps(['angela', 'anjela', 'oi angela', 'ei angela', 'angela abra a calculadora', '[unk]'], ensure_ascii=False)
+            recognizer = KaldiRecognizer(model, 16000, wake_grammar)
             with RawInputStream(
                 samplerate=16000, blocksize=4000, dtype="int16",
                 channels=1, callback=callback,
@@ -170,9 +180,12 @@ class WakeListener:
                         continue
 
                     if self._reset.is_set():
-                        recognizer = KaldiRecognizer(model, 16000)
+                        self._listening_for_command = self._followup.is_set()
+                        self._mic_peak = 0.0
+                        recognizer = (KaldiRecognizer(model, 16000) if self._listening_for_command
+                                      else KaldiRecognizer(model, 16000, wake_grammar))
                         parser.reset()
-                        if self._followup.is_set():
+                        if self._listening_for_command:
                             parser.arm_follow_up(time.monotonic())
                             self._followup.clear()
                         self._reset.clear()
@@ -186,19 +199,26 @@ class WakeListener:
                         chunk = audio.get(timeout=0.2)
                     except queue.Empty:
                         if parser.expired(time.monotonic()):
+                            self._listening_for_command = False
+                            self._reset.set()
                             self.on_event("wake_timeout", "")
                         continue
 
                     if recognizer.AcceptWaveform(chunk):
                         recognized = json.loads(recognizer.Result()).get("text", "")
+                        print('ANGELA_HEARD', repr(recognized), flush=True)
                         event = parser.accept(recognized, time.monotonic())
                         if event:
                             kind, text = event
+                            if self._listening_for_command and kind == 'wake_command':
+                                self._listening_for_command = False
                             if kind == "wake_command":
                                 # Suspende imediatamente para não disparar duas ações.
                                 self.pause()
                             self.on_event(kind, text)
                     elif parser.expired(time.monotonic()):
+                        self._listening_for_command = False
+                        self._reset.set()
                         self.on_event("wake_timeout", "")
         except Exception as exc:
             if not self._stop.is_set():

@@ -14,6 +14,7 @@ from .actions import normalize
 from .windows_apps import InstalledApp, WindowsAppCatalog, rank_matches
 from .windows_folders import folder_from_text, open_local_folder
 from .windows_windows import WindowInfo, enumerate_windows, matching_windows, request_close_window
+from .audit_log import record
 
 _OPEN = re.compile(
     r"^(?:abra|abre|abrir|inicie|inicia)\s+(.+)$"
@@ -44,8 +45,9 @@ def strip_app_name(name: str) -> str:
 def command_kind(text: str) -> tuple[str, str] | None:
     """Interpreta comandos de sistema; perguntas gerais voltam para o chat."""
     text = normalize(text).strip(" .,!?:;")
-    if text.startswith("angela "):
-        text = text[7:].lstrip(", ")
+    text = re.sub(r"^(?:(?:oi|ola|bom dia|boa tarde|boa noite|ei|angela|anjela)[, ]+)+", "", text).strip()
+    text = re.sub(r"^(?:voce pode|pode|consegue|por favor)\s+", "", text).strip()
+    text = re.sub(r"\s+(?:por favor|pra mim|para mim)$", "", text).strip()
     if any(term in text for term in _LIST_APPS):
         return "list_apps", ""
     if any(term in text for term in _LIST_WINDOWS):
@@ -67,7 +69,9 @@ def command_kind(text: str) -> tuple[str, str] | None:
 
     close_match = _CLOSE.match(text)
     if close_match:
-        return "close_window", strip_app_name(close_match.group(1))
+        target = strip_app_name(close_match.group(1))
+        target = re.sub(r"^(?:as|os)\s+", "", target)
+        return "close_window", target
 
     found = _FIND.match(text)
     if found and any(w in text for w in ("app", "aplicativo", "programa", "opera", "chrome")):
@@ -187,6 +191,9 @@ class WindowsController:
         if not name:
             return "Qual janela deseja fechar?"
         hits = matching_windows(self.windows(), name)
+        if not hits and ('configurac' in normalize(name) or normalize(name) in {'settings', 'som'}):
+            hits = [window for window in self.windows() if 'configurac' in normalize(window.title) or normalize(window.title) in {'settings', 'system settings'}]
+        record('window_close_search', target=name, matches=[{'hwnd':x.hwnd,'title':x.title} for x in hits])
         if not hits:
             return f"Não encontrei uma janela aberta correspondente a '{name}'."
         if len(hits) > 1:
@@ -198,6 +205,7 @@ class WindowsController:
     def _ask_close(self, window: WindowInfo) -> str:
         if "angela ai" in normalize(window.title):
             return "Por segurança, feche a Ângela pelo botão X da janela."
+        record('window_close_confirmation_requested', title=window.title, hwnd=window.hwnd)
         self.pending = Pending("confirm_close", [window], self.clock() + 90)
         return (f"Posso solicitar o fechamento de '{window.title}'. "
                 "Pode haver trabalho não salvo. Confirmar fechamento? Diga sim ou cancelar.")
@@ -217,9 +225,12 @@ class WindowsController:
                 if not any(current.hwnd == item.hwnd and current.title == item.title
                            for current in self.windows()):
                     return "A janela mudou ou foi fechada. Peça novamente se necessário."
+                record('window_close_attempt', title=item.title, hwnd=item.hwnd, method='WM_CLOSE')
                 if self.close(item):
+                    record('window_close_result', status='requested', title=item.title)
                     return (f"Solicitei ao Windows que feche '{item.title}'. "
                             "Se houver conteúdo não salvo, o aplicativo poderá pedir confirmação.")
+                record('window_close_result', status='failed', title=item.title)
                 return "Não consegui enviar o pedido de fechamento; a janela pode ter sido fechada."
             if command_kind(text):
                 self.pending = None

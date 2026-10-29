@@ -13,6 +13,10 @@ __pycache__/
 models/
 *.mp3
 *.wav
+# Dependências locais do painel web (biblioteca vendorizada em vendor/)
+angela/web/node_modules/
+# Cópias de trabalho locais, não pertencem ao código distribuído
+*.backup_*
 # IDE e sistema operacional
 .vscode/
 .idea/

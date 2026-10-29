@@ -56,6 +56,21 @@ class TestActions(unittest.TestCase):
         self.assertEqual(actions.seen, ["calculator"])
         self.assertEqual(chat.seen, [])
 
+    def test_frases_variadas_calculadora(self):
+        phrases = ("Angela, abra a calculadora", "Pode abrir a calculadora", "Você consegue abrir a calculadora", "Calculadora", "calculadora para mim")
+        for phrase in phrases:
+            with self.subTest(phrase=phrase):
+                self.assertEqual(detect_action(phrase), "calculator")
+
+    def test_novo_comando_interrompe_escolha_pendente(self):
+        from angela.windows_controller import Pending
+        import time
+        actions, chat = DummyActions(), DummyChat()
+        engine = AssistantEngine(actions=actions, chat=chat)
+        engine.windows.pending = Pending('choose_app', [], time.monotonic() + 90)
+        self.assertEqual(engine.reply('Abra a calculadora'), 'Ação simulada')
+        self.assertIsNone(engine.windows.pending)
+
     def test_roteamento_chat(self):
         actions, chat = DummyActions(), DummyChat()
         answer = AssistantEngine(actions=actions, chat=chat).reply("O que é Python?")
@@ -64,7 +79,7 @@ class TestActions(unittest.TestCase):
         self.assertEqual(chat.seen, ["O que é Python?"])
 
     def test_saudacao(self):
-        self.assertIn("Ângela", AssistantEngine(chat=DummyChat()).reply("Olá"))
+        self.assertIn("ouvindo", AssistantEngine(chat=DummyChat()).reply("Olá"))
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
+from .user_profile import profile_context
 
 load_dotenv()
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -55,7 +56,7 @@ class GroqChat:
                 "configure GROQ_API_KEY no arquivo .env e reinicie a Ângela."
             )
 
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": SYSTEM_PROMPT + " " + profile_context()}]
         messages.extend(self.history[-12:])
         messages.append({"role": "user", "content": message})
         payload = {

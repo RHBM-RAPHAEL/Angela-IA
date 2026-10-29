@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -16,8 +17,9 @@ def normalize(text: str) -> str:
 
 def detect_action(message: str) -> str | None:
     text = " ".join(normalize(message).replace(",", " ").split())
-    if text.startswith("angela "):
-        text = text[7:].strip()
+    text = re.sub(r'^(?:oi |ei |ola )?(?:angela |anjela )', '', text).strip()
+    text = re.sub(r'^(?:por favor |voce pode |pode |pra mim |para mim )+', '', text)
+    text = re.sub(r'^(?:voce consegue |consegue )', '', text)
 
     theme_verbs = ("mude", "muda", "coloque", "coloca", "troque", "troca",
                    "altere", "altera", "ative", "ativa", "deixe", "deixa")
@@ -27,10 +29,12 @@ def detect_action(message: str) -> str | None:
         if "escuro" in text:
             return "theme_dark"
 
-    open_verbs = ("abra ", "abre ", "abrir ", "inicie ", "inicia ", "execute ", "executa ")
+    open_verbs = ("abra ", "abre ", "abrir ", "inicie ", "inicia ", "execute ", "executa ", "abrindo ", "abrir o ")
     if not text.startswith(open_verbs):
+        if re.fullmatch(r'(?:a |o )?(?:calculadora|calc|calculador)(?: para mim| por favor)?', text):
+            return 'calculator'
         return None
-    if "calculadora" in text:
+    if "calculadora" in text or re.search(r'\bcalc\b', text):
         return "calculator"
     if "bloco de notas" in text or "notepad" in text:
         return "notepad"
@@ -56,19 +60,27 @@ class ActionDispatcher:
                 return "Solicitei ao Windows a mudança para o tema escuro."
             if action == "calculator":
                 subprocess.Popen(["calc.exe"])
-                return "Abrindo a calculadora."
+                return self._check_window("calculator", "Calculadora")
             if action == "notepad":
                 subprocess.Popen(["notepad.exe"])
-                return "Abrindo o Bloco de Notas."
+                return self._check_window("notepad", "Bloco de Notas")
             if action == "explorer":
                 subprocess.Popen(["explorer.exe", str(Path.home())])
-                return "Abrindo o Explorador de Arquivos."
+                return self._check_window("explorer", "Explorador de Arquivos")
             if action == "vscode":
                 self._open_vscode()
-                return "Abrindo o Visual Studio Code."
+                return self._check_window("vscode", "Visual Studio Code")
         except (OSError, ValueError) as exc:
             return f"Não consegui concluir a ação: {exc}"
         return "Este comando ainda não está disponível."
+
+    @staticmethod
+    def _check_window(action: str, label: str) -> str:
+        from .window_launch import wait_for_window
+        if wait_for_window(action, timeout=2.5):
+            return f'Confirmei que {label} está aberto.'
+        return (f'Solicitei a abertura de {label}, mas ainda não consegui '
+                'confirmar a janela. Verifique se apareceu na área de trabalho.')
 
     @staticmethod
     def _open_vscode() -> None:

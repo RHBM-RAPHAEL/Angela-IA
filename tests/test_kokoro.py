@@ -20,20 +20,21 @@ class TestKokoro(unittest.TestCase):
                 dora.assert_called_once_with("Olá")
                 edge.assert_not_called()
 
-    def test_automatico_prioriza_dora(self):
-        with patch("angela.speech._speak_kokoro", return_value="Dora"):
+    def test_automatico_prioriza_thalita(self):
+        with patch("angela.speech._speak_kokoro") as dora:
             with patch("angela.speech._speak_windows") as windows:
-                with patch("angela.speech._speak_edge") as edge:
-                    self.assertEqual(speak("Oi", "auto"), "Dora")
+                with patch("angela.speech._speak_edge", return_value="Thalita") as edge:
+                    self.assertEqual(speak("Oi", "auto"), "Thalita")
                     windows.assert_not_called()
-                    edge.assert_not_called()
+                    dora.assert_not_called()
+                    edge.assert_called_once()
 
-    def test_automatico_windows_se_dora_falhar(self):
+    def test_automatico_windows_se_edge_e_dora_falharem(self):
         with patch("angela.speech._speak_kokoro", side_effect=RuntimeError("sem modelo")):
             with patch("angela.speech._speak_windows", return_value="Windows"):
-                with patch("angela.speech._speak_edge") as edge:
-                    self.assertEqual(speak("Oi", "auto"), "Windows")
-                    edge.assert_not_called()
+                with patch("angela.speech._speak_edge", side_effect=SpeechError("sem internet")):
+                    with self.assertRaises(SpeechError):
+                        speak("Oi", "auto")
 
     def test_automatico_francisca_por_ultimo(self):
         with patch("angela.speech._speak_kokoro", side_effect=RuntimeError("sem modelo")):
@@ -53,7 +54,7 @@ class TestKokoro(unittest.TestCase):
                 with patch("angela.speech._speak_edge", side_effect=SpeechError("403")):
                     with self.assertRaises(SpeechError) as ctx:
                         speak("Oi", "auto")
-                    self.assertIn("Dora:", str(ctx.exception))
+                    self.assertNotIn("Dora:", str(ctx.exception))
                     self.assertIn("Francisca:", str(ctx.exception))
 
     def test_modelo_groq_legado_migrado(self):

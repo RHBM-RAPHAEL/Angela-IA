@@ -143,14 +143,18 @@ class WindowsAppCatalog:
         # Get-StartApps devolve identificadores de aplicativos instalados,
         # inclusive alguns apps da Microsoft Store. Sem execução de scripts
         # sugeridos pela IA ou consulta à internet.
+        # Evita corromper nomes acentuados no Windows PowerShell 5.1.
         script = (
+            "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+            "$OutputEncoding = [Console]::OutputEncoding; "
             "Get-StartApps | Select-Object Name,AppID | ConvertTo-Json "
             "-Compress -Depth 3"
         )
         try:
             done = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-                capture_output=True, text=True, timeout=18,
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=18,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 check=False,
             )
