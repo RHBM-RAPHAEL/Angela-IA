@@ -27,9 +27,15 @@ transmissão contínua.
 
 ## Arquitetura
 
-- `angela/camera_vision.py`: reconhecimento conservador de intenção,
-  `QMediaDevices.videoInputs()`, `QCamera`, `QMediaCaptureSession` e
-  `QVideoSink` (Qt Multimedia), com um único `QVideoFrame` em memória.
+- `angela/camera_vision.py`: reconhecimento conservador de intenção e
+  captura com limite de 14 segundos em um processo filho isolado.
+- `angela/camera_worker.py`: cria o Qt na sua própria thread principal,
+  utiliza `QMediaDevices.videoInputs()`, `QCamera`, `QMediaCaptureSession`
+  e `QVideoSink` e devolve um único JPEG por pipe em memória.
+- O Qt Multimedia da webcam não é mais inicializado na thread de voz da
+  Ângela: isso evita o travamento da interface identificado após a foto.
+- Se o processo filho falhar ou exceder o limite, será encerrado e a
+  Ângela poderá informar a falha em vez de ficar congelada.
 - Sem OpenCV nem serviços adicionais; reutiliza o Qt instalado no Windows.
 - Uma solicitação `VisionRequest(scope="camera")` cria confirmação
   independente de tela e com validade de 75 segundos.

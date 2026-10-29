@@ -301,6 +301,50 @@ class CameraVisionTests(unittest.TestCase):
         self.assertEqual(session.setCamera.call_args_list[-1].args, (None,))
         self.assertIn("desligada", status.call_args.args[0])
 
+    def test_subprocesso_camera_isolado_entrega_jpeg_sem_expor_chave(self):
+        import subprocess
+        from angela.camera_vision import _isolated_capture_frame
+        statuses = []
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=make_jpeg(), stderr=b""
+        )
+        with (
+            patch("angela.camera_vision.subprocess.run", return_value=completed) as run,
+            patch.dict("angela.camera_vision.os.environ", {
+                "GROQ_API_KEY": "SECRET-FAKE-ONLY", "ANGELA_CAMERA_INDEX": "0",
+            }),
+        ):
+            image = _isolated_capture_frame(status_cb=statuses.append)
+        self.assertEqual(image, completed.stdout)
+        self.assertEqual(len(statuses), 2)
+        self.assertIn("Câmera desligada", statuses[-1])
+        self.assertEqual(run.call_args.args[0][-1], "angela.camera_worker")
+        self.assertNotIn("GROQ_API_KEY", run.call_args.kwargs["env"])
+        self.assertEqual(run.call_args.kwargs["env"]["ANGELA_CAMERA_INDEX"], "0")
+        self.assertEqual(run.call_args.kwargs["timeout"], 14)
+
+    def test_subprocesso_camera_timeout_solta_status(self):
+        import subprocess
+        from angela.camera_vision import _isolated_capture_frame
+        statuses = []
+        with patch(
+            "angela.camera_vision.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="camera", timeout=14),
+        ):
+            with self.assertRaisesRegex(VisionError, "demorou demais"):
+                _isolated_capture_frame(status_cb=statuses.append)
+        self.assertIn("Câmera desligada", statuses[-1])
+
+    def test_subprocesso_camera_falha_nao_envia_imagem(self):
+        import subprocess
+        from angela.camera_vision import _isolated_capture_frame
+        with patch(
+            "angela.camera_vision.subprocess.run",
+            return_value=subprocess.CompletedProcess([], 2, b"", b"private"),
+        ):
+            with self.assertRaisesRegex(VisionError, "não conseguiu obter"):
+                _isolated_capture_frame()
+
 
 if __name__ == "__main__":
     unittest.main()

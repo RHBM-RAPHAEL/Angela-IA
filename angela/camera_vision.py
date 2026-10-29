@@ -9,7 +9,9 @@ from __future__ import annotations
 
 from io import BytesIO
 import os
+from pathlib import Path
 import re
+import subprocess
 import sys
 
 from PIL import Image, UnidentifiedImageError
@@ -151,10 +153,56 @@ def _qt_capture_frame(timeout_ms: int = 4500, *, status_cb=None) -> bytes:
     return result[0]
 
 
+def _isolated_capture_frame(*, status_cb=None) -> bytes:
+    """Captura em processo Qt separado para não travar o GIL nem o HUD.
+
+    O filho termina após um JPEG ou é encerrado automaticamente no timeout.
+    Imagens transitam apenas por pipes em memória e não aparecem em logs.
+    """
+    if sys.platform != "win32":
+        raise VisionError("A câmera da Ângela está disponível somente no Windows.")
+    command = [sys.executable, "-m", "angela.camera_worker"]
+    project_root = Path(__file__).resolve().parent.parent
+    # Evite expor segredos de API ao processo que somente lê pixels.
+    child_env = {
+        key: value for key, value in os.environ.items()
+        if not any(word in key.upper() for word in (
+            "API_KEY", "TOKEN", "PASSWORD", "SECRET", "CREDENTIAL",
+        ))
+    }
+    try:
+        if status_cb:
+            status_cb("Câmera ligada · capturando uma única foto")
+        completed = subprocess.run(
+            command, cwd=str(project_root), env=child_env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=14, check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        raise VisionError(
+            "A webcam demorou demais. O processo da câmera foi encerrado."
+        ) from None
+    except (OSError, ValueError):
+        raise VisionError(
+            "Não consegui iniciar a webcam. Confira as permissões do Windows."
+        ) from None
+    finally:
+        if status_cb:
+            status_cb("Câmera desligada · captura concluída ou cancelada")
+    if completed.returncode != 0:
+        raise VisionError(
+            "A webcam não conseguiu obter a foto. Confira se está livre e autorizada."
+        )
+    if not 0 < len(completed.stdout) <= _MAX_BYTES:
+        raise VisionError("A câmera retornou uma imagem inválida.")
+    return completed.stdout
+
+
 def capture_camera(*, frame_provider=None, status_cb=None) -> ScreenFrame:
     """Obtém uma única foto JPEG em memória; frame_provider é só para testes."""
     if frame_provider is None:
-        jpeg = _qt_capture_frame(status_cb=status_cb)
+        jpeg = _isolated_capture_frame(status_cb=status_cb)
     else:
         jpeg = frame_provider()
     if not isinstance(jpeg, bytes) or not jpeg or len(jpeg) > _MAX_BYTES:
