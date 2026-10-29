@@ -6,6 +6,8 @@ Nunca executa comandos diretamente: somente emite textos para a interface.
 from __future__ import annotations
 
 import json
+import audioop
+from collections import deque
 import queue
 import re
 import threading
@@ -13,6 +15,8 @@ import time
 from typing import Callable
 
 from .actions import normalize
+from .audio_frontend import AudioFrontend, capture_candidates
+from .audit_log import record
 
 
 _WAKE_PATTERN = re.compile(
@@ -33,6 +37,17 @@ def extract_wake_command(text: str) -> str | None:
         text.strip(), flags=re.IGNORECASE,
     )
     return (original.group(1) if original else match.group(1)).strip()
+
+
+def choose_wake_transcript(open_text: str, restricted_text: str) -> str:
+    """Usa a transcrição livre se ela começa por Ângela.
+
+    O gramático limitado é fallback para o nome isolado; o comando não se
+    perde quando o usuário diz nome e instrução na mesma frase.
+    """
+    if extract_wake_command(open_text) is not None:
+        return open_text
+    return restricted_text
 
 
 class WakePhraseParser:
@@ -130,18 +145,13 @@ class WakeListener:
             thread.join(timeout=1.5)
 
     def _run(self) -> None:
-        audio: queue.Queue[bytes] = queue.Queue(maxsize=24)
+        audio: queue.Queue[bytes] = queue.Queue(maxsize=40)
         parser = WakePhraseParser(self.follow_up_seconds)
 
         def callback(indata, frames, timestamp, status):
             if self._stop.is_set() or self._paused.is_set():
                 return
-            # Read the existing Vosk microphone stream: no second mic device.
-            if self._listening_for_command:
-                import audioop
-                level = min(1.0, audioop.rms(bytes(indata), 2) / 9000.0)
-                self._mic_peak = max(level, self._mic_peak * 0.55)
-                self.on_event('mic_level', self._mic_peak)
+            # Nunca processar DSP ou callbacks Qt na thread de áudio realtime.
             try:
                 audio.put_nowait(bytes(indata))
             except queue.Full:
@@ -150,7 +160,7 @@ class WakeListener:
 
         try:
             from vosk import KaldiRecognizer
-            from sounddevice import RawInputStream
+            import sounddevice as sd
             from .download_model import MODEL_PATH
             from .speech import _get_model
 
@@ -160,12 +170,63 @@ class WakeListener:
                 )
 
             model = _get_model(str(MODEL_PATH))
-            wake_grammar = json.dumps(['angela', 'anjela', 'oi angela', 'ei angela', 'angela abra a calculadora', '[unk]'], ensure_ascii=False)
+            wake_grammar = json.dumps([
+                'angela', 'anjela', 'oi angela', 'ei angela',
+                'olá angela', 'angela abra a calculadora', '[unk]'
+            ], ensure_ascii=False)
             recognizer = KaldiRecognizer(model, 16000, wake_grammar)
-            with RawInputStream(
-                samplerate=16000, blocksize=4000, dtype="int16",
-                channels=1, callback=callback,
-            ):
+            replay = deque(maxlen=80)  # últimos 8 segundos, somente em RAM
+            stream = None
+            selected = None
+            startup_errors = []
+            # Escolhe captura que entrega sinal real; drivers de matrizes
+            # digitais podem devolver apenas zeros por certos endpoints.
+            candidates = capture_candidates(sd)
+            for position, config in enumerate(candidates):
+                try:
+                    stream = sd.RawInputStream(
+                        device=config.device, samplerate=config.sample_rate,
+                        blocksize=int(config.sample_rate * 0.10),
+                        dtype="int16", channels=1, callback=callback,
+                    )
+                    stream.start()
+                    # Avalia apenas a intensidade por 450 ms: nunca grava áudio.
+                    peak_rms = 0
+                    probe_end = time.monotonic() + 0.45
+                    while time.monotonic() < probe_end:
+                        try:
+                            sample = audio.get(timeout=0.1)
+                            peak_rms = max(peak_rms, audioop.rms(sample, 2))
+                        except queue.Empty:
+                            pass
+                    record('microphone_probe', source=config.source,
+                           device_index=config.device, peak_rms=peak_rms)
+                    print('ANGELA_MIC_PROBE', config.source, config.device,
+                          peak_rms, flush=True)
+                    # Só descarta silêncio absoluto caso exista alternativa.
+                    if peak_rms < 8 and position < len(candidates) - 1:
+                        stream.stop()
+                        stream.close()
+                        stream = None
+                        continue
+                    selected = config
+                    break
+                except (OSError, ValueError, RuntimeError, sd.PortAudioError) as exc:
+                    startup_errors.append(type(exc).__name__)
+                    if stream is not None:
+                        try:
+                            stream.close()
+                        except OSError:
+                            pass
+                        stream = None
+            if stream is None or selected is None:
+                raise RuntimeError("Nenhuma entrada de microfone disponível: " + ",".join(startup_errors))
+            frontend = AudioFrontend(selected.sample_rate)
+            record('microphone_open', source=selected.source, sample_rate=selected.sample_rate,
+                   device_index=selected.device, max_gain=frontend.agc.max_gain)
+            print('ANGELA_MIC_SOURCE', selected.source, selected.device, selected.sample_rate, flush=True)
+            last_metrics = time.monotonic()
+            try:
                 if not self._stop.is_set():
                     self.on_event("wake_ready", "")
                 while not self._stop.is_set():
@@ -184,6 +245,8 @@ class WakeListener:
                         self._mic_peak = 0.0
                         recognizer = (KaldiRecognizer(model, 16000) if self._listening_for_command
                                       else KaldiRecognizer(model, 16000, wake_grammar))
+                        replay.clear()
+                        frontend.reset()
                         parser.reset()
                         if self._listening_for_command:
                             parser.arm_follow_up(time.monotonic())
@@ -204,10 +267,38 @@ class WakeListener:
                             self.on_event("wake_timeout", "")
                         continue
 
-                    if recognizer.AcceptWaveform(chunk):
+                    processed = frontend.process(chunk)
+                    if not processed:
+                        continue
+                    if self._listening_for_command:
+                        level = min(1.0, frontend.agc.last_output_rms / 6500.0)
+                        self._mic_peak = max(level, self._mic_peak * 0.60)
+                        self.on_event('mic_level', self._mic_peak)
+                    now = time.monotonic()
+                    if now - last_metrics >= 6.0:
+                        record('mic_signal_level', rms_in=frontend.agc.last_input_rms,
+                               rms_out=frontend.agc.last_output_rms,
+                               gain=round(frontend.agc.gain, 2),
+                               ambient=round(frontend.agc.ambient_rms),
+                               queue_depth=audio.qsize())
+                        last_metrics = now
+                    if not self._listening_for_command:
+                        replay.append(processed)
+                    complete = recognizer.AcceptWaveform(processed)
+                    if complete:
                         recognized = json.loads(recognizer.Result()).get("text", "")
+                        if not self._listening_for_command:
+                            # Só usa a decodificação livre após um segmento
+                            # finalizado, nunca em paralelo continuamente.
+                            if recognized and not self._stop.is_set():
+                                extended = KaldiRecognizer(model, 16000)
+                                for piece in replay:
+                                    extended.AcceptWaveform(piece)
+                                broad = json.loads(extended.FinalResult()).get("text", "")
+                                recognized = choose_wake_transcript(broad, recognized)
+                            replay.clear()
                         print('ANGELA_HEARD', repr(recognized), flush=True)
-                        event = parser.accept(recognized, time.monotonic())
+                        event = parser.accept(recognized, now)
                         if event:
                             kind, text = event
                             if self._listening_for_command and kind == 'wake_command':
@@ -216,10 +307,16 @@ class WakeListener:
                                 # Suspende imediatamente para não disparar duas ações.
                                 self.pause()
                             self.on_event(kind, text)
-                    elif parser.expired(time.monotonic()):
+                    elif parser.expired(now):
                         self._listening_for_command = False
                         self._reset.set()
                         self.on_event("wake_timeout", "")
+            finally:
+                try:
+                    stream.stop()
+                    stream.close()
+                except (OSError, RuntimeError, sd.PortAudioError):
+                    pass
         except Exception as exc:
             if not self._stop.is_set():
                 # Sem dump de dispositivos nem stack trace sensível.
