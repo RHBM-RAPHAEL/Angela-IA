@@ -193,6 +193,15 @@ class HologramOverlay(QWebEngineView):
         if self.voice_coordinator is not None:
             self.voice_coordinator.poll()
 
+    def protect_vision_capture(self):
+        # O holograma e o painel não devem contaminar a captura da janela ativa.
+        from .screen_vision import protect_own_window
+        results = (
+            protect_own_window(int(self.winId())),
+            protect_own_window(int(self.chat_panel.winId())),
+        )
+        print("ANGELA_VISION_OVERLAY_EXCLUDED", results, flush=True)
+
     def enable_voice(self):
         if self.voice_coordinator is None:
             self.voice_coordinator = VoiceCoordinator(self.set_state)
@@ -224,6 +233,7 @@ def main():
     overlay = HologramOverlay()
     overlay.show()
     overlay.chat_panel.show()
+    QTimer.singleShot(750, overlay.protect_vision_capture)
     if os.environ.get("ANGELA_ENABLE_VOICE", "") == "1":
         QTimer.singleShot(900, overlay.enable_voice)
     sys.exit(app.exec())

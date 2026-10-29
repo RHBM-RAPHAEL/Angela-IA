@@ -17,11 +17,18 @@ from .intent_confirmation import IntentConfirmation
 from .project_listing import list_request, list_folders, listing_reply
 from .adaptive_memory import preference_request, save_preference, load_preferences
 from .command_quality import normalize_request, clock_request, local_clock_reply, browser_intent, execution_feedback_eligible
+from .screen_vision import (
+    parse_vision_request, confirmation_decision, analyze_screen,
+    VisionRequest,
+)
+import time
 
 HELP_MESSAGE = (
     "Posso abrir a calculadora, o Bloco de Notas, o Explorador e o VS Code; "
     "também posso alterar o tema claro ou escuro do Windows. "
     "Posso procurar aplicativos instalados, abrir pastas por caminho e pedir confirmação antes de fechar janelas. "
+    "Posso também analisar a janela ativa ou a tela inteira sob demanda, "
+    "sempre pedindo confirmação antes de enviar uma captura à IA Groq. "
     "Se configurar a chave Groq, também podemos conversar sobre outros assuntos."
 )
 
@@ -39,6 +46,7 @@ class AssistantEngine:
         self.last_interpretation = None
         self.last_panel = None
         self.last_execution = False
+        self._vision_pending: tuple[VisionRequest, float] | None = None
 
     def _as_action(self, result: str) -> str:
         self.last_execution = execution_feedback_eligible(result, True)
@@ -60,6 +68,41 @@ class AssistantEngine:
         if unknown_speech(message):
             record('speech_not_understood', transcript=message)
             return 'Não consegui entender o que você disse. Pode repetir mais devagar?'
+
+        # Captura somente após autorização explícita para CADA pergunta.
+        # Confirmações visuais precedem a lógica de fechar janelas e aplicativos.
+        pending = self._vision_pending
+        if pending is not None:
+            self._vision_pending = None
+            request, expires = pending
+            decision = confirmation_decision(message)
+            if decision is False:
+                record('vision_consent', approved=False)
+                return 'Certo, não vou capturar nem enviar sua tela.'
+            if decision is True:
+                if time.monotonic() > expires:
+                    return 'A autorização para analisar a tela expirou. Peça novamente.'
+                if not getattr(self.chat, 'available', False):
+                    return 'Não consigo analisar imagens sem uma chave Groq configurada.'
+                record('vision_consent', approved=True, scope=request.scope)
+                # Sem guardar a imagem no histórico, no disco ou no log.
+                return analyze_screen(request, self.chat.api_key)
+            # Outro assunto cancela a autorização anterior sem captura.
+
+        screen_request = parse_vision_request(message)
+        if screen_request is not None:
+            if not getattr(self.chat, 'available', False):
+                return ('Para entender imagens da tela, preciso que GROQ_API_KEY '
+                        'esteja configurada. Não fiz nenhuma captura.')
+            self._vision_pending = (screen_request, time.monotonic() + 75)
+            scope = ('janela ativa' if screen_request.scope == 'window'
+                     else 'tela inteira do monitor principal')
+            record('vision_consent_requested', scope=screen_request.scope)
+            return (
+                f'Posso capturar uma imagem da {scope} e enviá-la à IA Groq '
+                'para responder sua pergunta? Diga sim para permitir ou cancelar. '
+                'Você autoriza?'
+            )
         if clock_request(message):
             record('local_clock_requested')
             return local_clock_reply()

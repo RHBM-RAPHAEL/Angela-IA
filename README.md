@@ -121,3 +121,19 @@ Teste em voz normal, sem gritar: confira a barra de microfone; diga "Ângela" e,
 Se o microfone continuar falhando, consulte a entrada escolhida no log local
 `%LOCALAPPDATA%\AngelaAI\logs\history.jsonl` através dos eventos
 `microphone_open`, `microphone_probe` e `mic_signal_level`.
+
+## Visão computacional de tela (Ângela)
+
+A Ângela agora consegue interpretar **uma captura da tela sob demanda** e
+responder por voz usando Groq Qwen 3.8 Vision. Não faz monitoramento contínuo.
+
+Diga "Ângela", depois "o que tem na minha tela?" ou "analise a janela ativa".
+A assistente pede autorização **por captura**; diga "sim" para permitir o envio
+de uma imagem à Groq ou "cancelar" para não transmitir. Use "janela ativa" se
+quiser restringir a imagem ao aplicativo em primeiro plano.
+
+A aura e o painel são excluídos das capturas em Windows compatível. Não são
+gravados screenshots no disco nem adicionados ao histórico ou aos logs.
+
+**Importante:** esconda senhas e informações confidenciais antes de autorizar.
+Consulte [a documentação de visão](docs/visao-de-tela.md) para mais detalhes.
