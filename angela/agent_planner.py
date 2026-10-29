@@ -7,6 +7,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from .audit_log import record
+from .perf_metrics import timed
 from .chat import API_URL
 from .windows_resources import SETTINGS, open_resource
 from .windows_apps import rank_matches
@@ -86,8 +87,9 @@ def plan_via_groq(message, chat):
                       headers={"Authorization": f"Bearer {chat.api_key}",
                                "Content-Type": "application/json"}, method="POST")
     try:
-        with urlopen(request, timeout=12) as response:
-            obj = json.loads(response.read().decode("utf-8"))
+        with timed("intent_routing"):
+            with urlopen(request, timeout=12) as response:
+                obj = json.loads(response.read().decode("utf-8"))
         plan = parse_plan(json.loads(obj["choices"][0]["message"]["content"]))
         record("agent_plan", steps=plan, status="valid" if plan is not None else "invalid")
         return plan

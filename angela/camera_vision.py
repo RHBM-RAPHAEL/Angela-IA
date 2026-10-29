@@ -17,6 +17,7 @@ from PIL import Image, UnidentifiedImageError
 from .actions import normalize
 from .audit_log import record
 from .screen_vision import ScreenFrame, VisionError, VisionRequest, analyze_frame
+from .perf_metrics import timed
 
 _MAX_DIMENSION = 1280
 _MAX_BYTES = 3_000_000
@@ -185,10 +186,12 @@ def analyze_camera(request: VisionRequest, api_key: str,
     if request.scope != "camera":
         return "Essa solicitação não é de câmera."
     try:
-        frame = capturer(status_cb=status_cb) if status_cb else capturer()
+        with timed("camera_capture"):
+            frame = capturer(status_cb=status_cb) if status_cb else capturer()
         record("camera_capture", width=frame.width, height=frame.height,
                bytes=len(frame.jpeg_bytes), scope="camera")
-        result = analyzer(frame, request.question, api_key)
+        with timed("visual_analysis"):
+            result = analyzer(frame, request.question, api_key)
         record("camera_analysis", result_ready=bool(result))
         return result
     except VisionError as exc:

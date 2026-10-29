@@ -8,6 +8,12 @@ from angela.chat import DEFAULT_MODEL, GroqChat, select_model
 
 
 class TestKokoro(unittest.TestCase):
+    def setUp(self):
+        import os
+        flag = patch.dict(os.environ, {"ANGELA_TTS_STREAMING": "0"})
+        flag.start()
+        self.addCleanup(flag.stop)
+
     def test_arquivos_ausentes(self):
         with patch("angela.kokoro_local.MODEL_FILE") as model:
             model.is_file.return_value = False

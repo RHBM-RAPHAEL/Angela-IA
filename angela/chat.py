@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
 from .user_profile import profile_context
+from .perf_metrics import timed
 
 load_dotenv()
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -76,8 +77,9 @@ class GroqChat:
             method="POST",
         )
         try:
-            with urlopen(req, timeout=30) as response:
-                body = json.loads(response.read().decode("utf-8"))
+            with timed("ai_total"):
+                with urlopen(req, timeout=30) as response:
+                    body = json.loads(response.read().decode("utf-8"))
             answer = str(body["choices"][0]["message"]["content"] or "").strip()
             if not answer:
                 return "A IA não retornou uma resposta. Tente novamente."

@@ -16,6 +16,7 @@ from .states import AngelaState
 from .wake import WakeListener
 from .conversation_flow import invites_answer, wants_to_end
 from .audit_log import record, begin_interaction, set_interaction
+from .perf_metrics import metric, measure_ms
 
 _RANDOM = SystemRandom()
 
@@ -50,6 +51,8 @@ class VoiceCoordinator:
         self.awaiting_answer = False
         self.conversation_closed = False
         self.trace_id = None
+        self._wake_activated_ns = None
+        self._command_ready_ns = None
         self.on_panel = lambda payload: None
         self.on_transcript = lambda payload: None
         self.on_understanding = lambda text: None
@@ -102,6 +105,8 @@ class VoiceCoordinator:
         self._next_reportable = False
         self.listener.stop()
         self._discard_pending_events()
+        self._wake_activated_ns = None
+        self._command_ready_ns = None
 
     def listen_follow_up(self):
         self.busy = False
@@ -112,6 +117,7 @@ class VoiceCoordinator:
     def _speak_async(self, message, follow_up):
         epoch = self._session_epoch
         trace_id = self.trace_id
+        command_ready_ns = self._command_ready_ns
         def work():
             if not self.active or epoch != self._session_epoch:
                 return
@@ -121,9 +127,14 @@ class VoiceCoordinator:
                 from .command_quality import speech_summary
                 voice_text = speech_summary(message, limit=290)
                 set_interaction(trace_id)
-                record('speech_attempt', method='edge_tts', provider='auto', text=voice_text)
-                voice_used = speak(voice_text, provider="auto", on_level=lambda value: self._emit_if_current(epoch, "voice_level", value))
-                record('speech_result', status='success', provider=voice_used, duration_ms=round((time.perf_counter()-started)*1000))
+                record('speech_attempt', method='edge_tts', provider='auto', characters=len(voice_text))
+                def first_audio():
+                    if command_ready_ns is not None:
+                        metric("voice_end_to_audio", measure_ms(command_ready_ns))
+                voice_used = speak(voice_text, provider="auto", on_level=lambda value: self._emit_if_current(epoch, "voice_level", value), on_first_audio=first_audio)
+                duration = round((time.perf_counter()-started)*1000)
+                metric("tts_total", duration)
+                record('speech_result', status='success', provider=voice_used, duration_ms=duration)
                 print('ANGELA_TIMING voice_total_ms', round((time.perf_counter()-started)*1000), 'provider', voice_used, flush=True)
                 self._emit_if_current(epoch, "finished_speech", "followup" if follow_up else "normal")
             except Exception as exc:
@@ -162,7 +173,9 @@ class VoiceCoordinator:
                 self._emit_if_current(epoch, 'execution_reportable', reportable)
                 if panel is not None:
                     self._emit_if_current(epoch, 'panel', panel)
-                record('command_result', reply=reply, duration_ms=round((time.perf_counter()-started)*1000))
+                duration = round((time.perf_counter()-started)*1000)
+                metric("command_dispatch", duration)
+                record('command_result', reply=reply, duration_ms=duration)
                 print('ANGELA_TIMING reply_ms', round((time.perf_counter()-started)*1000), flush=True)
                 print('ANGELA_COMMAND_RESULT', repr(reply[:160]), flush=True)
                 self._emit_if_current(epoch, "reply", reply)
@@ -198,6 +211,7 @@ class VoiceCoordinator:
                     print("ANGELA_MIC_READY", flush=True)
             elif kind == "wake_activated" and self.active and not self.busy:
                 self.trace_id = begin_interaction()
+                self._wake_activated_ns = time.perf_counter_ns()
                 record('wake_activated')
                 self.conversation_closed = False
                 self.listener.pause()
@@ -213,6 +227,10 @@ class VoiceCoordinator:
                 if not self.trace_id:
                     self.trace_id = begin_interaction()
                 set_interaction(self.trace_id)
+                self._command_ready_ns = time.perf_counter_ns()
+                if self._wake_activated_ns is not None:
+                    metric("wake_to_command", measure_ms(self._wake_activated_ns, self._command_ready_ns))
+                    self._wake_activated_ns = None
                 record('heard', transcript=value)
                 from .actions import normalize
                 feedback_text = " ".join(re.sub(r"[^a-z0-9 ]+", " ", normalize(value)).split())

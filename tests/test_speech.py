@@ -5,6 +5,14 @@ from angela.speech import SpeechError, VOICE_TEST_SENTENCE, speak
 
 
 class SpeechTest(TestCase):
+    def setUp(self):
+        # Testes legados verificam explicitamente o fallback nao-streaming.
+        import os
+        from unittest.mock import patch
+        env_patch = patch.dict(os.environ, {"ANGELA_TTS_STREAMING": "0"})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+
     def test_texto_vazio_nao_aciona_voz(self):
         with patch("angela.speech._speak_edge") as edge:
             self.assertEqual(speak(" "), "Nenhum texto informado.")

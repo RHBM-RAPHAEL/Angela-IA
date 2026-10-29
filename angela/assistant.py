@@ -22,6 +22,7 @@ from .screen_vision import (
     VisionRequest,
 )
 from .camera_vision import parse_camera_request, analyze_camera
+from .perf_metrics import timed
 import time
 
 HELP_MESSAGE = (
@@ -224,7 +225,8 @@ class AssistantEngine:
 
         if action:
             record('action_attempt', method='action_dispatcher', action=action)
-            result = self.actions.perform(action)
+            with timed("windows_action"):
+                result = self.actions.perform(action)
             record('action_result', method='action_dispatcher', action=action, result=result)
             return self._as_action(result)
 
@@ -235,7 +237,8 @@ class AssistantEngine:
             return self._as_action(result) if tool_request.action == 'read_command' else result
 
         record('routing_attempt', method='windows_controller', transcript=message)
-        local_reply = self.windows.process(message)
+        with timed("windows_action"):
+            local_reply = self.windows.process(message)
         if local_reply is not None:
             record('action_result', method='windows_controller', result=local_reply)
             kind = command_kind(message)
