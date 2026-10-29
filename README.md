@@ -90,12 +90,15 @@ Não altera o volume global do Windows nem grava arquivos de áudio.
 - Se a entrada devolver silêncio digital absoluto, procura a entrada física
   WDM-KS correspondente ao mesmo conjunto de microfones.
 - Se o dispositivo alternativo não abrir, tenta o microfone padrão do Windows.
+- WDM-KS de dois canais: seleciona o canal físico com maior sinal de voz sem misturar fases opostas.
 - Converte o fluxo em memória para PCM mono de 16 kHz antes do Vosk.
 - O ganho máximo padrão é 10x, com limitação de pico e supressão de ganho no
   silêncio. Pode ser ajustado sem mudar o volume global do computador.
 - A espera pela palavra de ativação usa um único reconhecedor Vosk;
   apenas quando uma fala termina um segundo passe analisa alguns segundos
   de áudio mantidos em memória, para recuperar comandos ditos junto ao nome.
+- A barra de microfone do painel reage à voz antes mesmo da palavra de ativação.
+- Após ouvir “Ângela” isoladamente, a escuta começa imediatamente, sem aguardar uma saudação online.
 - O log local inclui somente indicadores de intensidade de áudio e a fonte
   selecionada, nunca áudio bruto. Transcrições continuam seguindo as
   regras locais de histórico de conversas já existentes.
@@ -105,7 +108,7 @@ Variáveis de ambiente opcionais (definir antes de iniciar o aplicativo):
 ```powershell
 $env:ANGELA_MIC_MAX_GAIN = "10"
 $env:ANGELA_MIC_DEVICE = "default"  # Força o microfone padrão, se necessário
-# Alternativa: $env:ANGELA_MIC_DEVICE = "19"   # Índice depende do computador
+# Alternativa: $env:ANGELA_MIC_DEVICE = "20"   # Índice depende do computador
 $env:ANGELA_MIC_PREFER_WASAPI = "0"  # Desativa seleção automática de WASAPI/WDM-KS
 ```
 
@@ -113,7 +116,7 @@ Não é preciso definir essas variáveis para usar a seleção automática. O
 dispositivo WDM-KS pode ter restrições de compartilhamento; em chamadas ou
 gravações simultâneas use `ANGELA_MIC_DEVICE=default`.
 
-Teste em voz normal, sem gritar: "Ângela", aguarde a resposta, e diga
+Teste em voz normal, sem gritar: confira a barra de microfone; diga "Ângela" e, quando a interface mostrar "Ouvindo...", diga
 "abra a calculadora". Teste também "Ângela, abra o Opera" na mesma frase.
 Se o microfone continuar falhando, consulte a entrada escolhida no log local
 `%LOCALAPPDATA%\AngelaAI\logs\history.jsonl` através dos eventos

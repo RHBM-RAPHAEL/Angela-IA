@@ -100,9 +100,9 @@ class HologramOverlay(QWebEngineView):
         )
 
     def set_mic_level(self, level):
-        self.page().runJavaScript(
-            f"window.angelaSetMicLevel({max(0.0, min(1.0, float(level))):.3f})"
-        )
+        level = max(0.0, min(1.0, float(level)))
+        self.page().runJavaScript(f"window.angelaSetMicLevel({level:.3f})")
+        self.chat_panel.set_microphone_level(level)
 
     def set_microphone_status(self, message):
         self.chat_panel.status.setText(str(message))

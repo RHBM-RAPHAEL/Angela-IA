@@ -13,14 +13,15 @@ class VoiceCoordinatorTests(unittest.TestCase):
         self.coordinator.active = True
         self.coordinator.listener = Mock()
 
-    def test_primeiro_chamado_cumprimenta(self):
+    def test_primeiro_chamado_inicia_escuta_imediatamente(self):
         with patch.object(self.coordinator, "_speak_async") as speak:
             self.coordinator.events.put(("wake_activated", ""))
             self.coordinator.poll()
             self.assertTrue(self.coordinator.activated_once)
-            self.assertTrue(self.coordinator.busy)
-            self.states.assert_called_with(AngelaState.SPEAKING)
-            speak.assert_called_once()
+            self.assertFalse(self.coordinator.busy)
+            self.states.assert_called_with(AngelaState.LISTENING)
+            self.coordinator.listener.resume.assert_called_once_with(follow_up=True)
+            speak.assert_not_called()
 
     def test_segundo_chamado_silencioso_escuta(self):
         self.coordinator.activated_once = True
@@ -31,6 +32,13 @@ class VoiceCoordinatorTests(unittest.TestCase):
             self.states.assert_called_with(AngelaState.LISTENING)
             self.coordinator.listener.resume.assert_called_once_with(follow_up=True)
             speak.assert_not_called()
+
+    def test_volume_microfone_atualiza_aura_antes_de_ativacao(self):
+        volume = Mock()
+        self.coordinator.on_mic_level = volume
+        self.coordinator.events.put(("mic_level", 0.4))
+        self.coordinator.poll()
+        volume.assert_called_once_with(0.4)
 
     def test_microfone_iniciado_e_exibido_no_painel(self):
         status = Mock()

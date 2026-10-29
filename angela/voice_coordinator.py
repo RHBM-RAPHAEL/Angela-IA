@@ -195,11 +195,12 @@ class VoiceCoordinator:
                 self.listener.pause()
                 if not self.activated_once:
                     self.activated_once = True
-                    self.busy = True
-                    self.set_state(AngelaState.SPEAKING)
-                    self._speak_async(greeting(), follow_up=True)
-                else:
-                    self.listen_follow_up()
+                    # A saudação TTS online pode levar 10-20 segundos.
+                    # Durante esse intervalo o microfone ficava pausado,
+                    # parecendo desligado. Entrar direto em escuta evita
+                    # perder os comandos ditos logo após "Ângela".
+                    record('wake_first_activation', response='listen_immediately')
+                self.listen_follow_up()
             elif kind == "wake_command" and self.active and not self.busy:
                 if not self.trace_id:
                     self.trace_id = begin_interaction()

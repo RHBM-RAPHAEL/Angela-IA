@@ -122,6 +122,29 @@ class AudioFrontendTests(unittest.TestCase):
         frontend = AudioFrontend(16000)
         self.assertEqual(len(frontend.process(tone(600))), 3200)
 
+    def test_microfone_estereo_prioriza_canal_com_voz(self):
+        left = struct.unpack("<1600h", tone(110))
+        right = struct.unpack("<1600h", tone(1400))
+        interleaved = b"".join(struct.pack("<hh", a, b)
+                               for a, b in zip(left, right))
+        frontend = AudioFrontend(16000, input_channels=2)
+        result = frontend.process(interleaved)
+        self.assertEqual(len(result), 3200)
+        self.assertEqual(frontend.selected_channel, 1)
+        self.assertGreater(__import__("audioop").rms(result, 2),
+                           __import__("audioop").rms(tone(110), 2) * 5)
+
+    def test_microfones_fora_de_fase_nao_se_cancelam(self):
+        left = struct.unpack("<1600h", tone(1400))
+        interleaved = b"".join(struct.pack("<hh", s, -s) for s in left)
+        frontend = AudioFrontend(16000, input_channels=2)
+        result = frontend.process(interleaved)
+        self.assertGreater(__import__("audioop").rms(result, 2), 500)
+
+    def test_canais_invalidos_rejeitados(self):
+        with self.assertRaises(ValueError):
+            AudioFrontend(16000, input_channels=4)
+
     def test_reiniciar_ganho_entre_turnos(self):
         frontend = AudioFrontend(16000)
         for _ in range(10):
@@ -149,6 +172,7 @@ class AudioFrontendTests(unittest.TestCase):
         self.assertEqual(result[0].source, "wasapi-native")
         self.assertIn("wdmks-raw", [item.source for item in result])
         self.assertEqual(result[1].device, 4)
+        self.assertEqual(result[1].channels, 2)
         self.assertEqual(result[-2].source, "default-16k")
 
     def test_escolher_dispositivo_padrao(self):

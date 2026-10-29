@@ -8,7 +8,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QVBoxLayout, QHBoxLayout,
-    QScrollArea, QSizePolicy, QApplication,
+    QScrollArea, QSizePolicy, QApplication, QProgressBar,
 )
 
 
@@ -38,7 +38,13 @@ class ConversationPanel(QWidget):
               border: 1px solid #367bad; border-radius: 14px; }
           QLabel { color: #dcecff; font: 12px 'Segoe UI'; }
           QLabel#panel-title { color: #86d9ff; font-size: 15px; font-weight: 700; }
-          QLabel#panel-status { color: #89b2cc; font-size: 10px; }
+          QLabel#panel-status { color: #ffffff; font-size: 12px; font-weight: 600; }
+          QLabel#mic-hint { color: #b7dded; font-size: 10px; }
+          QFrame#mic-box { background: rgba(8, 26, 43, 239);
+              border: 1px solid #4c93bd; border-radius: 9px; }
+          QProgressBar#mic-meter { background: #071523;
+              border: 1px solid #406c82; border-radius: 4px; }
+          QProgressBar#mic-meter::chunk { background: #2be67b; border-radius: 3px; }
           QLabel#interpreted { color: #b1ddeb; font-size: 10px; }
           QScrollArea, QWidget#message-container {
               background: transparent; border: none; }
@@ -70,9 +76,27 @@ class ConversationPanel(QWidget):
         stop_button.clicked.connect(self.stop_requested.emit)
         header.addWidget(stop_button)
         body.addLayout(header)
-        self.status = QLabel("Aguardando comando de voz")
+        self.mic_box = QFrame()
+        self.mic_box.setObjectName("mic-box")
+        mic_layout = QVBoxLayout(self.mic_box)
+        mic_layout.setContentsMargins(9, 8, 9, 8)
+        mic_layout.setSpacing(4)
+        self.status = QLabel("Aguardando inicialização do microfone")
         self.status.setObjectName("panel-status")
-        body.addWidget(self.status)
+        self.status.setWordWrap(True)
+        mic_layout.addWidget(self.status)
+        self.mic_meter = QProgressBar()
+        self.mic_meter.setObjectName("mic-meter")
+        self.mic_meter.setRange(0, 100)
+        self.mic_meter.setValue(0)
+        self.mic_meter.setFixedHeight(9)
+        self.mic_meter.setTextVisible(False)
+        mic_layout.addWidget(self.mic_meter)
+        self.mic_hint = QLabel("A barra reage ao som, mesmo antes de dizer Ângela.")
+        self.mic_hint.setObjectName("mic-hint")
+        self.mic_hint.setWordWrap(True)
+        mic_layout.addWidget(self.mic_hint)
+        body.addWidget(self.mic_box)
         self.interpreted = QLabel("")
         self.interpreted.setObjectName("interpreted")
         self.interpreted.setTextFormat(Qt.TextFormat.PlainText)
@@ -137,6 +161,14 @@ class ConversationPanel(QWidget):
             oldest.deleteLater()
         QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(
             self.scroll.verticalScrollBar().maximum()))
+
+    def set_microphone_level(self, level: float):
+        scaled = int(max(0.0, min(1.0, float(level))) * 100)
+        self.mic_meter.setValue(scaled)
+        if scaled >= 10:
+            self.mic_hint.setText("Som detectado pelo microfone.")
+        else:
+            self.mic_hint.setText("Fale normalmente. A barra deve se mover.")
 
     def set_interpretation(self, text: str | None):
         summary = ("Interpretado como: " + str(text)[:125]) if text else ""

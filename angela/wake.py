@@ -188,7 +188,7 @@ class WakeListener:
                     stream = sd.RawInputStream(
                         device=config.device, samplerate=config.sample_rate,
                         blocksize=int(config.sample_rate * 0.10),
-                        dtype="int16", channels=1, callback=callback,
+                        dtype="int16", channels=config.channels, callback=callback,
                     )
                     stream.start()
                     # Avalia apenas a intensidade por 450 ms: nunca grava áudio.
@@ -231,7 +231,7 @@ class WakeListener:
                 stream = sd.RawInputStream(
                     device=config.device, samplerate=config.sample_rate,
                     blocksize=int(config.sample_rate * 0.10),
-                    dtype="int16", channels=1, callback=callback,
+                    dtype="int16", channels=config.channels, callback=callback,
                 )
                 stream.start()
                 selected = config
@@ -239,11 +239,14 @@ class WakeListener:
                        device_index=config.device, peak_rms=weak_rms)
             if stream is None or selected is None:
                 raise RuntimeError("Nenhuma entrada de microfone disponível: " + ",".join(startup_errors))
-            frontend = AudioFrontend(selected.sample_rate)
+            frontend = AudioFrontend(selected.sample_rate, input_channels=selected.channels)
             record('microphone_open', source=selected.source, sample_rate=selected.sample_rate,
-                   device_index=selected.device, max_gain=frontend.agc.max_gain)
-            print('ANGELA_MIC_SOURCE', selected.source, selected.device, selected.sample_rate, flush=True)
+                   device_index=selected.device, input_channels=selected.channels,
+                   max_gain=frontend.agc.max_gain)
+            print('ANGELA_MIC_SOURCE', selected.source, selected.device,
+                  selected.sample_rate, selected.channels, flush=True)
             last_metrics = time.monotonic()
+            last_level_emit = 0.0
             try:
                 if not self._stop.is_set():
                     self.on_event("wake_ready", "")
@@ -288,11 +291,17 @@ class WakeListener:
                     processed = frontend.process(chunk)
                     if not processed:
                         continue
-                    if self._listening_for_command:
-                        level = min(1.0, frontend.agc.last_output_rms / 6500.0)
-                        self._mic_peak = max(level, self._mic_peak * 0.60)
-                        self.on_event('mic_level', self._mic_peak)
+                    # Mostra captação também ANTES da palavra de ativação.
+                    # Na implementação anterior a aura só reagia após "Ângela",
+                    # dando a impressão de que o microfone estava desligado.
                     now = time.monotonic()
+                    if now - last_level_emit >= 0.14:
+                        noise_floor = max(12.0, frontend.agc.ambient_rms * 1.7)
+                        useful_rms = max(0.0, frontend.agc.last_output_rms - noise_floor)
+                        level = min(1.0, (useful_rms / 600.0) ** 0.5)
+                        self._mic_peak = max(level, self._mic_peak * 0.68)
+                        self.on_event('mic_level', self._mic_peak)
+                        last_level_emit = now
                     if now - last_metrics >= 6.0:
                         record('mic_signal_level', rms_in=frontend.agc.last_input_rms,
                                rms_out=frontend.agc.last_output_rms,

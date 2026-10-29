@@ -16,6 +16,7 @@ class CaptureConfig:
     device: int | None
     sample_rate: int
     source: str
+    channels: int = 1
 
 
 def capture_candidates(sd) -> list[CaptureConfig]:
@@ -74,8 +75,10 @@ def capture_candidates(sd) -> list[CaptureConfig]:
                 if "wdm-ks" not in api_name or base not in name:
                     continue
                 rate = int(round(info["default_samplerate"]))
-                sd.check_input_settings(device=index, channels=1, samplerate=rate, dtype="int16")
-                candidates.append(CaptureConfig(index, rate, "wdmks-raw"))
+                channels = min(2, int(info["max_input_channels"]))
+                sd.check_input_settings(device=index, channels=channels,
+                                        samplerate=rate, dtype="int16")
+                candidates.append(CaptureConfig(index, rate, "wdmks-raw", channels))
             except Exception:
                 continue
 
@@ -144,9 +147,14 @@ class AudioFrontend:
 
     OUTPUT_RATE = 16000
 
-    def __init__(self, capture_rate: int, *, max_gain: float | None = None):
+    def __init__(self, capture_rate: int, *, max_gain: float | None = None,
+                 input_channels: int = 1):
         if not 8000 <= int(capture_rate) <= 192000:
             raise ValueError("Taxa de amostragem inválida.")
+        if input_channels not in (1, 2):
+            raise ValueError("Somente captura mono e estéreo são suportadas.")
+        self.input_channels = input_channels
+        self.selected_channel = 0
         if max_gain is None:
             try:
                 max_gain = float(os.environ.get("ANGELA_MIC_MAX_GAIN", "10.0"))
@@ -157,6 +165,20 @@ class AudioFrontend:
         self._resample_state = None
 
     def process(self, chunk: bytes) -> bytes:
+        if self.input_channels == 2:
+            if len(chunk) % 4:
+                return b""
+            # As matrizes Intel SST expõem dois canais físicos com sinais
+            # diferentes. Um deles pode carregar quase só ruído; selecionar
+            # dinamicamente a voz mais forte evita perder sílabas.
+            left = audioop.tomono(chunk, 2, 1.0, 0.0)
+            right = audioop.tomono(chunk, 2, 0.0, 1.0)
+            left_rms, right_rms = audioop.rms(left, 2), audioop.rms(right, 2)
+            if self.selected_channel == 0 and right_rms > max(10, left_rms * 1.22):
+                self.selected_channel = 1
+            elif self.selected_channel == 1 and left_rms > max(10, right_rms * 1.22):
+                self.selected_channel = 0
+            chunk = right if self.selected_channel == 1 else left
         if self.rate != self.OUTPUT_RATE:
             chunk, self._resample_state = audioop.ratecv(
                 chunk, 2, 1, self.rate, self.OUTPUT_RATE, self._resample_state,
