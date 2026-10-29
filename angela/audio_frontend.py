@@ -94,8 +94,10 @@ def capture_candidates(sd) -> list[CaptureConfig]:
 class AdaptiveGain:
     """AGC limitado que não amplifica o ruído constante como se fosse fala."""
 
-    def __init__(self, *, target_rms: int = 2200, max_gain: float = 6.0):
-        self.max_gain = max(1.0, min(float(max_gain), 8.0))
+    def __init__(self, *, target_rms: int = 2200, max_gain: float = 10.0):
+        # O WDM-KS do notebook pode fornecer falas com PCM extremamente baixo.
+        # O teto protege a saída de saturação mesmo com captura silenciosa.
+        self.max_gain = max(1.0, min(float(max_gain), 12.0))
         self.target_rms = max(600, min(int(target_rms), 4000))
         self.gain = 1.0
         self.ambient_rms = 40.0
@@ -111,11 +113,12 @@ class AdaptiveGain:
         self.last_input_rms = rms
         self.last_peak = peak
 
-        # Estima gradualmente o nível ambiente em silêncio ou sinal estável.
-        if rms <= max(190.0, self.ambient_rms * 1.65):
-            coefficient = 0.045 if rms < self.ambient_rms else 0.015
+        # Estimar o ruído apenas em blocos silenciosos: a versão anterior
+        # aprendia falas fracas como "ruído" e depois deixava de amplificá-las.
+        if rms <= max(12.0, self.ambient_rms * 1.45):
+            coefficient = 0.065 if rms < self.ambient_rms else 0.01
             self.ambient_rms += coefficient * (rms - self.ambient_rms)
-        threshold = max(45.0, self.ambient_rms * 1.85)
+        threshold = max(12.0, self.ambient_rms * 1.85)
         speech = rms >= threshold
         if speech:
             desired = min(
@@ -146,9 +149,9 @@ class AudioFrontend:
             raise ValueError("Taxa de amostragem inválida.")
         if max_gain is None:
             try:
-                max_gain = float(os.environ.get("ANGELA_MIC_MAX_GAIN", "6.0"))
+                max_gain = float(os.environ.get("ANGELA_MIC_MAX_GAIN", "10.0"))
             except ValueError:
-                max_gain = 5.0
+                max_gain = 10.0
         self.rate = int(capture_rate)
         self.agc = AdaptiveGain(max_gain=max_gain)
         self._resample_state = None

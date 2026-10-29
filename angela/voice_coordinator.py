@@ -45,6 +45,7 @@ class VoiceCoordinator:
         self.activated_once = False
         self.on_voice_level = lambda value: None
         self.on_mic_level = lambda value: None
+        self.on_microphone_status = lambda message: None
         self.awaiting_answer = False
         self.conversation_closed = False
         self.trace_id = None
@@ -185,6 +186,8 @@ class VoiceCoordinator:
             elif kind == "wake_ready":
                 if self.active and not self.busy:
                     self.set_state(AngelaState.READY)
+                    self.on_microphone_status("Microfone ligado · diga Ângela")
+                    print("ANGELA_MIC_READY", flush=True)
             elif kind == "wake_activated" and self.active and not self.busy:
                 self.trace_id = begin_interaction()
                 record('wake_activated')
@@ -267,6 +270,7 @@ class VoiceCoordinator:
                     self.listener.stop()
                 if kind == 'wake_error':
                     self.set_state(AngelaState.STARTING)
+                    self.on_microphone_status("Microfone indisponível — verifique a entrada de áudio")
                 else:
                     self.set_state(AngelaState.READY)
                     if self.active:

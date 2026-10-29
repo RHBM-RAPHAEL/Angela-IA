@@ -85,7 +85,7 @@ class HologramOverlay(QWebEngineView):
         selected = self.state_machine.transition(state)
         self.page().runJavaScript("window.angelaSetState(" + repr(selected.value) + ")")
         statuses = {
-            "ready": "Pronta para ouvir",
+            "ready": "Microfone ligado · diga Ângela",
             "starting": "Iniciando reconhecimento de voz",
             "listening": "Ouvindo...",
             "processing": "Processando comando...",
@@ -103,6 +103,10 @@ class HologramOverlay(QWebEngineView):
         self.page().runJavaScript(
             f"window.angelaSetMicLevel({max(0.0, min(1.0, float(level))):.3f})"
         )
+
+    def set_microphone_status(self, message):
+        self.chat_panel.status.setText(str(message))
+        print("ANGELA_MIC_STATUS", str(message), flush=True)
 
     def show_panel(self, payload):
         self.page().runJavaScript(
@@ -194,6 +198,7 @@ class HologramOverlay(QWebEngineView):
             self.voice_coordinator = VoiceCoordinator(self.set_state)
             self.voice_coordinator.on_voice_level = self.set_voice_level
             self.voice_coordinator.on_mic_level = self.set_mic_level
+            self.voice_coordinator.on_microphone_status = self.set_microphone_status
             self.voice_coordinator.on_panel = self.show_panel
             self.voice_coordinator.on_transcript = self.show_transcript
             self.voice_coordinator.on_understanding = self.show_understanding

@@ -88,6 +88,26 @@ class AudioFrontendTests(unittest.TestCase):
         self.assertLessEqual(peak, 30000)
         self.assertEqual(len(adjusted), len(loud))
 
+    def test_volume_muito_baixo_apos_ruido_de_fundo(self):
+        agc = AdaptiveGain()
+        quiet_background = tone(6)
+        for _ in range(45):
+            agc.process(quiet_background)
+        low_voice = tone(45)
+        initial_rms = __import__("audioop").rms(low_voice, 2)
+        for _ in range(20):
+            boosted = agc.process(low_voice)
+        self.assertGreater(__import__("audioop").rms(boosted, 2), initial_rms * 4)
+        self.assertLessEqual(agc.gain, 12.0)
+
+    def test_ruido_baixo_estavel_nao_amplifica_silencio(self):
+        agc = AdaptiveGain()
+        ambient = tone(6)
+        for _ in range(60):
+            boosted = agc.process(ambient)
+        self.assertLessEqual(agc.gain, 1.05)
+        self.assertLessEqual(__import__("audioop").rms(boosted, 2), 6)
+
     def test_entrada_invalida_preservada(self):
         self.assertEqual(AdaptiveGain().process(b"\x01"), b"\x01")
 

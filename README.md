@@ -91,7 +91,7 @@ Não altera o volume global do Windows nem grava arquivos de áudio.
   WDM-KS correspondente ao mesmo conjunto de microfones.
 - Se o dispositivo alternativo não abrir, tenta o microfone padrão do Windows.
 - Converte o fluxo em memória para PCM mono de 16 kHz antes do Vosk.
-- O ganho máximo padrão é 6x, com limitação de pico e supressão de ganho no
+- O ganho máximo padrão é 10x, com limitação de pico e supressão de ganho no
   silêncio. Pode ser ajustado sem mudar o volume global do computador.
 - A espera pela palavra de ativação usa um único reconhecedor Vosk;
   apenas quando uma fala termina um segundo passe analisa alguns segundos
@@ -103,7 +103,7 @@ Não altera o volume global do Windows nem grava arquivos de áudio.
 Variáveis de ambiente opcionais (definir antes de iniciar o aplicativo):
 
 ```powershell
-$env:ANGELA_MIC_MAX_GAIN = "6"
+$env:ANGELA_MIC_MAX_GAIN = "10"
 $env:ANGELA_MIC_DEVICE = "default"  # Força o microfone padrão, se necessário
 # Alternativa: $env:ANGELA_MIC_DEVICE = "19"   # Índice depende do computador
 $env:ANGELA_MIC_PREFER_WASAPI = "0"  # Desativa seleção automática de WASAPI/WDM-KS

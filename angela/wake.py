@@ -179,6 +179,7 @@ class WakeListener:
             stream = None
             selected = None
             startup_errors = []
+            best_weak = None  # guarda a entrada mais forte se nenhuma atingir o limiar
             # Escolhe captura que entrega sinal real; drivers de matrizes
             # digitais podem devolver apenas zeros por certos endpoints.
             candidates = capture_candidates(sd)
@@ -203,8 +204,12 @@ class WakeListener:
                            device_index=config.device, peak_rms=peak_rms)
                     print('ANGELA_MIC_PROBE', config.source, config.device,
                           peak_rms, flush=True)
-                    # Só descarta silêncio absoluto caso exista alternativa.
-                    if peak_rms < 8 and position < len(candidates) - 1:
+                    # Não aceitar o primeiro canal que apresenta somente
+                    # ruído residual. Alguns canais WDM-KS entregam RMS < 20
+                    # mesmo sem captar a voz: tentar os seguintes.
+                    if peak_rms < 24:
+                        if best_weak is None or peak_rms > best_weak[1]:
+                            best_weak = (config, peak_rms)
                         stream.stop()
                         stream.close()
                         stream = None
@@ -219,6 +224,19 @@ class WakeListener:
                         except OSError:
                             pass
                         stream = None
+            if stream is None and best_weak is not None:
+                # Se a sala estiver totalmente silenciosa, ainda permitir
+                # a captura pela melhor entrada que conseguiu abrir.
+                config, weak_rms = best_weak
+                stream = sd.RawInputStream(
+                    device=config.device, samplerate=config.sample_rate,
+                    blocksize=int(config.sample_rate * 0.10),
+                    dtype="int16", channels=1, callback=callback,
+                )
+                stream.start()
+                selected = config
+                record("microphone_weak_fallback", source=config.source,
+                       device_index=config.device, peak_rms=weak_rms)
             if stream is None or selected is None:
                 raise RuntimeError("Nenhuma entrada de microfone disponível: " + ",".join(startup_errors))
             frontend = AudioFrontend(selected.sample_rate)

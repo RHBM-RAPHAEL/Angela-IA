@@ -32,6 +32,24 @@ class VoiceCoordinatorTests(unittest.TestCase):
             self.coordinator.listener.resume.assert_called_once_with(follow_up=True)
             speak.assert_not_called()
 
+    def test_microfone_iniciado_e_exibido_no_painel(self):
+        status = Mock()
+        self.coordinator.on_microphone_status = status
+        self.coordinator.events.put(("wake_ready", ""))
+        self.coordinator.poll()
+        self.states.assert_called_with(AngelaState.READY)
+        status.assert_called_once_with("Microfone ligado · diga Ângela")
+
+    def test_falha_microfone_nao_declara_pronto(self):
+        status = Mock()
+        self.coordinator.on_microphone_status = status
+        self.coordinator.events.put(("wake_error", "PortAudioError"))
+        self.coordinator.poll()
+        self.assertFalse(self.coordinator.active)
+        self.states.assert_called_with(AngelaState.STARTING)
+        status.assert_called_once()
+        self.assertIn("indisponível", status.call_args.args[0])
+
     def test_timeout_volta_a_azul(self):
         self.coordinator.events.put(("wake_timeout", ""))
         self.coordinator.poll()
