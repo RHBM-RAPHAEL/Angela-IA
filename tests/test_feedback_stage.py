@@ -87,7 +87,8 @@ class FeedbackStageTests(unittest.TestCase):
         self.assertFalse(engine.last_execution)
         engine.reply("bom dia")
         self.assertFalse(engine.last_execution)
-        answer = engine.reply("quais são os meus projetos?")
+        with patch('angela.assistant.list_folders', return_value=['Achei', 'Valorize']):
+            answer = engine.reply("quais são os meus projetos?")
         self.assertIn("pastas", answer)
         self.assertTrue(engine.last_execution)
 

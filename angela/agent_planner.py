@@ -114,7 +114,8 @@ def execute_plan(steps, windows, *, startfile=None):
     """Execute only a bounded, validated plan; stop on uncertainty."""
     import os
     result = []
-    opener = startfile or os.startfile
+    # os.startfile não existe em Linux: permitir teste/planejamento sem Windows.
+    opener = startfile if startfile is not None else getattr(os, 'startfile', None)
     for step in steps[:MAX_STEPS]:
         tool, target = step["tool"], step["target"]
         record("agent_step_attempt", tool=tool, target=target, browser=step["browser"])
@@ -154,6 +155,8 @@ def execute_plan(steps, windows, *, startfile=None):
                         outcome = f"Solicitei a abertura de {target} no {matches[0].name}."
                     except OSError:
                         outcome = f"Não consegui abrir o navegador {step['browser']}."
+            elif opener is None:
+                outcome = 'A abertura de sites no navegador padrão está disponível apenas no Windows.'
             else:
                 try:
                     opener(url)

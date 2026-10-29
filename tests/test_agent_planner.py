@@ -34,6 +34,14 @@ class PlannerTests(unittest.TestCase):
         self.assertIn("Solicitei", response)
         opener.assert_called_once_with("https://www.youtube.com")
 
+    def test_sem_startfile_nao_causa_excecao(self):
+        windows = Mock()
+        with patch('os.startfile', None, create=True):
+            response = execute_plan(
+                [{'tool': 'open_website', 'target': 'youtube', 'browser': ''}], windows
+            )
+        self.assertIn('apenas no Windows', response)
+
     def test_youtube_opera_executable(self):
         windows = Mock()
         windows.catalog.list_apps.return_value = [InstalledApp("Opera GX", "exe", r"C:\Browser\opera.exe")]

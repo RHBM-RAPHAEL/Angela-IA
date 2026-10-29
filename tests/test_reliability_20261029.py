@@ -3,6 +3,7 @@
 Os testes não executam ações no PC, não abrem navegadores e não gravam áudio.
 """
 import unittest
+import sys
 from unittest.mock import Mock, patch
 from datetime import datetime
 
@@ -126,6 +127,7 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIn("resposta completa", speech)
         self.assertNotIn("**", speech)
 
+    @unittest.skipUnless(sys.platform == 'win32', 'O overlay gráfico só existe no Windows.')
     def test_feedback_tracks_action_not_yes(self):
         from angela.desktop_overlay import HologramOverlay
         fake = Mock()
