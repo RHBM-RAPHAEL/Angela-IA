@@ -46,6 +46,7 @@ class VoiceCoordinator:
         self.on_voice_level = lambda value: None
         self.on_mic_level = lambda value: None
         self.on_microphone_status = lambda message: None
+        self.on_camera_status = lambda message: None
         self.awaiting_answer = False
         self.conversation_closed = False
         self.trace_id = None
@@ -147,6 +148,11 @@ class VoiceCoordinator:
                     if self.engine is None:
                         from .assistant import AssistantEngine
                         self.engine = AssistantEngine()
+                    self.engine.on_camera_status = (
+                        lambda status: self._emit_if_current(
+                            epoch, 'camera_status', status
+                        )
+                    )
                     reply = self.engine.reply(message)
                     interpretation = self.engine.last_interpretation
                     reportable = bool(self.engine.last_execution)
@@ -183,6 +189,8 @@ class VoiceCoordinator:
             elif kind == "mic_level":
                 if self.active and not self.busy:
                     self.on_mic_level(value)
+            elif kind == 'camera_status':
+                self.on_camera_status(value)
             elif kind == "wake_ready":
                 if self.active and not self.busy:
                     self.set_state(AngelaState.READY)

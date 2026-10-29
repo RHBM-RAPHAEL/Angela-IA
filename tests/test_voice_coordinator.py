@@ -58,6 +58,15 @@ class VoiceCoordinatorTests(unittest.TestCase):
         status.assert_called_once()
         self.assertIn("indisponível", status.call_args.args[0])
 
+    def test_status_da_camera_somente_pelo_coordenador(self):
+        status = Mock()
+        self.coordinator.on_camera_status = status
+        self.coordinator.events.put(("camera_status", "Câmera ligada · capturando uma única foto"))
+        self.coordinator.events.put(("camera_status", "Câmera desligada · foto concluída"))
+        self.coordinator.poll()
+        self.assertEqual(status.call_count, 2)
+        self.assertIn("Câmera desligada", status.call_args.args[0])
+
     def test_timeout_volta_a_azul(self):
         self.coordinator.events.put(("wake_timeout", ""))
         self.coordinator.poll()

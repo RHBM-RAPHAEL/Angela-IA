@@ -21,14 +21,16 @@ from .screen_vision import (
     parse_vision_request, confirmation_decision, analyze_screen,
     VisionRequest,
 )
+from .camera_vision import parse_camera_request, analyze_camera
 import time
 
 HELP_MESSAGE = (
     "Posso abrir a calculadora, o Bloco de Notas, o Explorador e o VS Code; "
     "também posso alterar o tema claro ou escuro do Windows. "
     "Posso procurar aplicativos instalados, abrir pastas por caminho e pedir confirmação antes de fechar janelas. "
-    "Posso também analisar a janela ativa ou a tela inteira sob demanda, "
-    "sempre pedindo confirmação antes de enviar uma captura à IA Groq. "
+    "Posso também analisar a janela ativa, a tela ou tirar uma foto pela "
+    "webcam sob demanda, sempre pedindo confirmação antes de enviar "
+    "qualquer imagem à IA Groq. "
     "Se configurar a chave Groq, também podemos conversar sobre outros assuntos."
 )
 
@@ -47,6 +49,8 @@ class AssistantEngine:
         self.last_panel = None
         self.last_execution = False
         self._vision_pending: tuple[VisionRequest, float] | None = None
+        # Recebe uma função de interface da VoiceCoordinator, sem acoplar Qt.
+        self.on_camera_status = lambda message: None
 
     def _as_action(self, result: str) -> str:
         self.last_execution = execution_feedback_eligible(result, True)
@@ -77,17 +81,37 @@ class AssistantEngine:
             request, expires = pending
             decision = confirmation_decision(message)
             if decision is False:
-                record('vision_consent', approved=False)
+                record('vision_consent', approved=False, scope=request.scope)
+                if request.scope == 'camera':
+                    return 'Certo, não vou ligar a câmera nem enviar nenhuma foto.'
                 return 'Certo, não vou capturar nem enviar sua tela.'
             if decision is True:
                 if time.monotonic() > expires:
-                    return 'A autorização para analisar a tela expirou. Peça novamente.'
+                    return 'A autorização para analisar a imagem expirou. Peça novamente.'
                 if not getattr(self.chat, 'available', False):
                     return 'Não consigo analisar imagens sem uma chave Groq configurada.'
                 record('vision_consent', approved=True, scope=request.scope)
-                # Sem guardar a imagem no histórico, no disco ou no log.
+                # Sem guardar imagens no histórico, no disco ou no log.
+                if request.scope == 'camera':
+                    return analyze_camera(
+                        request, self.chat.api_key, status_cb=self.on_camera_status
+                    )
                 return analyze_screen(request, self.chat.api_key)
             # Outro assunto cancela a autorização anterior sem captura.
+
+        camera_request = parse_camera_request(message)
+        if camera_request is not None:
+            if not getattr(self.chat, 'available', False):
+                return ('Para analisar uma foto da webcam, preciso de GROQ_API_KEY. '
+                        'A câmera permanece desligada.')
+            self._vision_pending = (camera_request, time.monotonic() + 75)
+            record('vision_consent_requested', scope='camera')
+            return (
+                'Posso ligar sua webcam para tirar UMA foto, desligá-la '
+                'imediatamente e enviar essa imagem à IA Groq para '
+                'responder sua pergunta? Diga sim para autorizar ou cancelar. '
+                'Você autoriza?'
+            )
 
         screen_request = parse_vision_request(message)
         if screen_request is not None:

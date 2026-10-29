@@ -137,3 +137,18 @@ gravados screenshots no disco nem adicionados ao histórico ou aos logs.
 
 **Importante:** esconda senhas e informações confidenciais antes de autorizar.
 Consulte [a documentação de visão](docs/visao-de-tela.md) para mais detalhes.
+
+## Visão pela câmera (webcam)
+
+A Ângela reconhece pedidos como **"Ângela, você consegue me ver pela câmera?"**
+e **"o que você está vendo pela webcam?"**. A câmera continua desligada
+até o usuário **autorizar explicitamente cada foto e envio à Groq**.
+Após a captura de um único quadro, a webcam é desligada automaticamente.
+
+A foto fica temporariamente em RAM, não é gravada no disco nem enviada
+aos logs. Não há filmagem contínua ou reconhecimento de identidade pelo rosto.
+Para trocar de webcam, use `ANGELA_CAMERA_INDEX=0` (índice conforme o
+Windows). O backend reutiliza o Qt Multimedia já instalado.
+
+Leia [o guia da visão pela webcam](docs/visao-webcam.md) antes de
+compartilhar imagens pessoais. A visão de tela segue funcionando separadamente.

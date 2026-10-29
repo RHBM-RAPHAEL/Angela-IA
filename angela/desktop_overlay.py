@@ -108,6 +108,10 @@ class HologramOverlay(QWebEngineView):
         self.chat_panel.status.setText(str(message))
         print("ANGELA_MIC_STATUS", str(message), flush=True)
 
+    def set_camera_status(self, message):
+        self.chat_panel.status.setText(str(message))
+        print("ANGELA_CAMERA_STATUS", str(message), flush=True)
+
     def show_panel(self, payload):
         self.page().runJavaScript(
             "window.angelaShowPanel(" + json.dumps(payload, ensure_ascii=False) + ")"
@@ -208,6 +212,7 @@ class HologramOverlay(QWebEngineView):
             self.voice_coordinator.on_voice_level = self.set_voice_level
             self.voice_coordinator.on_mic_level = self.set_mic_level
             self.voice_coordinator.on_microphone_status = self.set_microphone_status
+            self.voice_coordinator.on_camera_status = self.set_camera_status
             self.voice_coordinator.on_panel = self.show_panel
             self.voice_coordinator.on_transcript = self.show_transcript
             self.voice_coordinator.on_understanding = self.show_understanding
