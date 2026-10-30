@@ -165,3 +165,18 @@ aplicação e dispositivos autorizados em um teste posterior.
 resultados. Os dados ficam locais e a instrumentação permanece desligada
 por padrão. Nenhum áudio, imagem ou transcrição foi enviado a ferramentas
 de observabilidade.
+
+### Verificação adicional da API de IA em 30/10/2026
+
+Houve três respostas HTTP 200 de uma requisição sintética e sem dados pessoais
+à API Groq, com conclusão p50=386,5 ms, p95=440,5 ms e média=400,5 ms.
+A sonda usou inicialmente limite de 24 tokens e não recebeu texto de resposta
+identificável, possivelmente por uso de tokens internos do modelo.
+Logo, não é uma medição válida do tempo até o primeiro texto gerado nem da
+qualidade da resposta. O script benchmarks/groq_network_probe.py agora usa
+128 tokens, mas essa configuração ainda não teve resultado confirmado.
+Nenhuma informação de conversas, arquivos, tela ou webcam foi enviada.
+
+O relatório histórico privado da Ângela não foi lido nesta retomada. O
+resumo local disponível em angela/perf_report.py deve ser usado quando
+existirem novas medições autorizadas da aplicação em execução.
