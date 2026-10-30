@@ -265,6 +265,11 @@ class HologramOverlay(QWebEngineView):
 def main():
     os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-webgl")
     app = QApplication(sys.argv)
+    # O HUD e o painel usam Qt.Tool e nao contam como janelas principais.
+    # Fechar a ultima janela comum (previsao, video ou resposta) nao pode
+    # desligar a escuta continua nem encerrar a assistente.
+    # O desligamento explicito continua em HologramOverlay.closeEvent().
+    app.setQuitOnLastWindowClosed(False)
     overlay = HologramOverlay()
     overlay.show()
     overlay.chat_panel.show()

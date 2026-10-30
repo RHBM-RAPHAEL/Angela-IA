@@ -48,6 +48,8 @@ class ResultWindow(QWidget):
         self.setWindowTitle("Ângela · " + str(payload.get("title", "Resultado"))[:80])
         self.setWindowFlags(Qt.WindowType.Window)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        # Janela auxiliar: nunca encerrar o processo ao fechar o resultado.
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.resize(720, 490 if payload["kind"] == "video" else 430)
         self.setMinimumSize(460, 290)
         self.setStyleSheet("""
