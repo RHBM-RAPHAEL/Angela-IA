@@ -71,30 +71,47 @@ def _speak_kokoro(text: str) -> str:
     return speak_dora(text)
 
 
-def _speak_edge_fast(text: str) -> str:
-    """Speak each completed neural segment immediately, preserving Thalita."""
-    import io
-    import pygame
-    from .streaming_tts import synthesize_segments, split_phrases
+def _speak_edge_fast(text: str, on_level=None, on_first_audio=None) -> str:
+    """Inicia primeira fala após o primeiro segmento, sem esperar MP3 completo.
 
+    A síntese seguinte acontece simultaneamente à reprodução da anterior.
+    Pygame permanece na thread do sintetizador, nunca na thread gráfica Qt.
+    """
+    import io
+    import math
+    import pygame
+    from .streaming_tts import buffered_segments
+    from .perf_metrics import metric
+
+    begin = time.perf_counter()
     initialized = False
     try:
         pygame.mixer.init()
         initialized = True
-
-        def play_segment(data: bytes, index: int):
-            started = time.perf_counter()
+        first = True
+        for index, data in buffered_segments(text, _VOICE):
             pygame.mixer.music.load(io.BytesIO(data), "mp3")
+            pygame.mixer.music.set_volume(1.0)
             pygame.mixer.music.play()
-            if index == 0:
-                print("ANGELA_FIRST_AUDIO_MS",
-                      round((time.perf_counter() - begin) * 1000), flush=True)
+            if first:
+                delay = (time.perf_counter() - begin) * 1000
+                metric("tts_first_audio", delay)
+                if on_first_audio is not None:
+                    on_first_audio()
+                print("ANGELA_FIRST_AUDIO_MS", round(delay), flush=True)
+                first = False
+            started = time.monotonic()
             while pygame.mixer.music.get_busy():
-                time.sleep(0.03)
+                if on_level is not None:
+                    # Feedback visual leve; não decodificar o MP3 antes de falar.
+                    elapsed = time.monotonic() - started
+                    on_level(0.30 + 0.17 * abs(math.sin(elapsed * 12)))
+                time.sleep(0.04)
+            if on_level is not None:
+                on_level(0.0)
             pygame.mixer.music.unload()
-
-        begin = time.perf_counter()
-        synthesize_segments(text, _VOICE, play_segment)
+        if first:
+            raise SpeechError("A voz não retornou segmentos de áudio.")
     finally:
         if initialized:
             pygame.mixer.music.stop()
@@ -102,7 +119,7 @@ def _speak_edge_fast(text: str) -> str:
     return "Thalita (streaming por frases)"
 
 
-def _speak_edge(text: str, on_level=None) -> str:
+def _speak_edge(text: str, on_level=None, on_first_audio=None) -> str:
     """Geração neural online da voz Thalita, com cache de frases curtas."""
     import edge_tts
     import pygame
@@ -146,6 +163,8 @@ def _speak_edge(text: str, on_level=None) -> str:
             loaded = True
             pygame.mixer.music.set_volume(1.0)
             pygame.mixer.music.play()
+            if on_first_audio is not None:
+                on_first_audio()
             if on_level is not None:
                 from .voice_envelope import mp3_envelope
                 levels = mp3_envelope(output)
@@ -252,7 +271,7 @@ def _friendly_error(provider: str, exc: Exception) -> str:
     return f"Dora: falha de síntese ({type(exc).__name__})."
 
 
-def speak(text: str, provider: str = "auto", on_level=None) -> str:
+def speak(text: str, provider: str = "auto", on_level=None, on_first_audio=None) -> str:
     """Voz Thalita online em primeiro lugar, com alternativas offline."""
     if provider not in {"auto", "kokoro", "edge", "windows"}:
         raise ValueError("Provedor de voz inválido.")
@@ -269,7 +288,11 @@ def speak(text: str, provider: str = "auto", on_level=None) -> str:
                     return _speak_kokoro(text[:1800])
                 if current == "windows":
                     return _speak_windows(text[:1800])
-                return _speak_edge(text[:1800], on_level=on_level) if on_level is not None else _speak_edge(text[:1800])
+                # Fluxo rápido é o padrão, reversível com ANGELA_TTS_STREAMING=0.
+                # A voz continua a mesma Thalita, sem trocar o modelo.
+                if os.environ.get("ANGELA_TTS_STREAMING", "1") != "0":
+                    return _speak_edge_fast(text[:1800], on_level=on_level, on_first_audio=on_first_audio)
+                return _speak_edge(text[:1800], on_level=on_level, on_first_audio=on_first_audio)
             except Exception as exc:
                 errors.append(_friendly_error(current, exc))
 

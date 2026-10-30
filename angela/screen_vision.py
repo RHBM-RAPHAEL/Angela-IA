@@ -20,6 +20,7 @@ from urllib.request import Request, urlopen
 from .actions import normalize
 from .audit_log import record
 from .chat import API_URL
+from .perf_metrics import timed
 
 VISION_MODEL = "qwen/qwen3.8-27b"
 _MAX_IMAGE_BYTES = 3_000_000
@@ -273,10 +274,12 @@ def analyze_screen(request: VisionRequest, api_key: str,
                    analyzer=analyze_frame) -> str:
     """Único ponto autorizado pelo AssistantEngine após confirmação."""
     try:
-        frame = capturer(request.scope)
+        with timed("screen_capture"):
+            frame = capturer(request.scope)
         record("vision_capture", scope=frame.scope,
                width=frame.width, height=frame.height, bytes=len(frame.jpeg_bytes))
-        result = analyzer(frame, request.question, api_key)
+        with timed("visual_analysis"):
+            result = analyzer(frame, request.question, api_key)
         record("vision_analysis", scope=frame.scope, succeeded=bool(result))
         return result
     except VisionError as exc:

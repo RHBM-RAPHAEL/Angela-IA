@@ -17,6 +17,7 @@ from typing import Callable
 from .actions import normalize
 from .audio_frontend import AudioFrontend, capture_candidates
 from .audit_log import record
+from .perf_metrics import metric, measure_ms
 
 
 _WAKE_PATTERN = re.compile(
@@ -182,6 +183,7 @@ class WakeListener:
             best_weak = None  # guarda a entrada mais forte se nenhuma atingir o limiar
             # Escolhe captura que entrega sinal real; drivers de matrizes
             # digitais podem devolver apenas zeros por certos endpoints.
+            microphone_probe_start_ns = time.perf_counter_ns()
             candidates = capture_candidates(sd)
             for position, config in enumerate(candidates):
                 try:
@@ -239,6 +241,7 @@ class WakeListener:
                        device_index=config.device, peak_rms=weak_rms)
             if stream is None or selected is None:
                 raise RuntimeError("Nenhuma entrada de microfone disponível: " + ",".join(startup_errors))
+            metric('microphone_probe', measure_ms(microphone_probe_start_ns))
             frontend = AudioFrontend(selected.sample_rate, input_channels=selected.channels)
             record('microphone_open', source=selected.source, sample_rate=selected.sample_rate,
                    device_index=selected.device, input_channels=selected.channels,
