@@ -23,6 +23,7 @@ if ($CreateDesktopShortcut) {
     $shortcut = $shell.CreateShortcut($target)
     $shortcut.TargetPath = $exe
     $shortcut.WorkingDirectory = $root
+    $shortcut.IconLocation = (Join-Path $PSScriptRoot 'assets\AngelaAI.ico') + ',0'
     $shortcut.Description = $display + ' - Assistente pessoal com voz e visao'
     $shortcut.Save()
     Write-Output ('SHORTCUT_READY: ' + $target)

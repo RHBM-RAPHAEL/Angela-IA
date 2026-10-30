@@ -62,12 +62,17 @@ internal static class Program
         Environment.SetEnvironmentVariable("PYTHONIOENCODING", "utf-8");
         Directory.SetCurrentDirectory(project);
 
+        // O Py_Main pode criar sua propria tabela de ambiente no Windows.
+        // Definir somente a variavel pelo host .NET nao garante que Python
+        // a enxergue. No modo atalho, definimos a configuracao em os.environ
+        // antes de importar o HUD. Com argumentos, manter o Python intacto.
         string[] parameters = args.Length == 0
-            ? new[] { "-m", "angela.desktop_overlay" }
+            ? new[] { "-c", "import os;os.environ['ANGELA_ENABLE_VOICE']='1';from angela.desktop_overlay import main;main()" }
             : args;
 
-        if (args.Length == 0 &&
-            string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANGELA_ENABLE_VOICE")))
+        // Ao abrir pelo atalho (sem argumentos), a escuta deve iniciar sempre.
+        // Com parametros explicitos (-m/-c), preservar o modo de teste.
+        if (args.Length == 0)
             Environment.SetEnvironmentVariable("ANGELA_ENABLE_VOICE", "1");
 
         // Python executado dentro deste processo, NÃO subprocesso python.exe.

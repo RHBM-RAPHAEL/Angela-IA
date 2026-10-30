@@ -21,6 +21,7 @@ from .feedback_store import (
 from .states import AngelaState, AngelaStateMachine
 from .voice_coordinator import VoiceCoordinator
 from .actions import normalize
+from .audit_log import record
 
 
 class TransparentPage(QWebEnginePage):
@@ -57,7 +58,10 @@ class HologramOverlay(QWebEngineView):
         self.settings().setAttribute(
             QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True
         )
-        self.setGeometry(QApplication.primaryScreen().geometry())
+        # A janela transparente nao deve parecer um aplicativo em tela cheia:
+        # isso pode acionar automaticamente o modo Nao incomodar do Windows.
+        # Dois pixels fora da borda nao afetam o holograma visivelmente.
+        self.setGeometry(QApplication.primaryScreen().geometry().adjusted(0, 0, -2, -2))
 
         # A esfera não recebe cliques, mas a janela lateral é interativa.
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
@@ -233,6 +237,7 @@ class HologramOverlay(QWebEngineView):
         print("ANGELA_VISION_OVERLAY_EXCLUDED", results, flush=True)
 
     def enable_voice(self):
+        record('voice_enable_attempt')
         if self.voice_coordinator is None:
             self.voice_coordinator = VoiceCoordinator(self.set_state)
             self.voice_coordinator.on_voice_level = self.set_voice_level
@@ -249,6 +254,7 @@ class HologramOverlay(QWebEngineView):
             self.voice_coordinator.on_feedback_text = self.show_feedback_transcript
         self.voice_timer.start(70)
         self.voice_coordinator.start()
+        record('voice_enable_completed')
 
     def closeEvent(self, event):
         for window in list(self.result_windows.values()):
@@ -265,6 +271,7 @@ class HologramOverlay(QWebEngineView):
 def main():
     os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-webgl")
     app = QApplication(sys.argv)
+    record('desktop_overlay_started', voice_requested=os.environ.get('ANGELA_ENABLE_VOICE') == '1')
     # O HUD e o painel usam Qt.Tool e nao contam como janelas principais.
     # Fechar a ultima janela comum (previsao, video ou resposta) nao pode
     # desligar a escuta continua nem encerrar a assistente.

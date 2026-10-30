@@ -37,3 +37,23 @@ continuam funcionais; não criam nem enviam imagens sem consentimento.
 
 Para depurar no terminal, compile Debug (OutputType Exe). Em Release,
 WinExe evita abrir console adicional na área de trabalho.
+
+## Ícone e correção da escuta no atalho
+
+O PNG original foi convertido em `launcher/assets/AngelaAI.ico` com tamanhos
+16, 24, 32, 48, 64, 128 e 256 pixels. O executável Release incorpora
+esse ícone; o atalho também usa explicitamente o mesmo arquivo.
+O script `launcher/make_icon.py` permite recriar o ICO a partir do PNG
+local indicado pelo usuário (esse PNG não é necessário para executar o app).
+
+O host .NET não propagava de maneira confiável `ANGELA_ENABLE_VOICE` ao
+ambiente do Python embutido. Ao abrir pelo atalho (sem argumentos), o host
+agora define `os.environ['ANGELA_ENABLE_VOICE']='1'` dentro do próprio
+Python antes de importar e executar `angela.desktop_overlay.main()`.
+Em execução real, o log confirmou `desktop_overlay_started voice=True`,
+`voice_enable_completed` e `microphone_open` com a fonte wdmks-raw.
+
+O holograma também não usa mais o retângulo exato da tela inteira; uma
+margem de 2 pixels evita que ele pareça uma aplicação fullscreen para a
+regra automática de Não incomodar do Windows. O efeito no aviso do Windows
+ainda precisa ser conferido visualmente no sistema.

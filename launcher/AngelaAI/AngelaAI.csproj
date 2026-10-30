@@ -5,6 +5,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <AssemblyName>AngelaAI</AssemblyName>
     <AssemblyTitle>Ângela AI</AssemblyTitle>
+    <ApplicationIcon>..\assets\AngelaAI.ico</ApplicationIcon>
     <RootNamespace>AngelaAI</RootNamespace>
     <Product>Ângela AI</Product>
     <Title>Ângela AI</Title>
