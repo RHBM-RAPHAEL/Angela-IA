@@ -171,3 +171,13 @@ exigindo autorização por captura.
 
 Veja docs/janelas-dinamicas.md. A interface completa não foi iniciada
 durante os testes da implementação: exige validação visual posterior.
+
+
+## Executável com nome Ângela AI no Windows
+
+O microfone deixa de ser atribuído ao Python quando a assistente é iniciada
+pelo novo executável AngelaAI.exe, que hospeda o mesmo interpretador Python.
+O build e o atalho de área de trabalho ficam em launcher/ (veja
+launcher/README.md). Processos iniciados pelo comando antigo continuam a ser
+identificados como Python. A mudança de nome depende de reiniciar pelo novo
+atalho; nenhuma configuração global do Python foi modificada.

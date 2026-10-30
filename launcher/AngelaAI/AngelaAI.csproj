@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType Condition="'$(Configuration)' != 'Release'">Exe</OutputType>
+    <OutputType Condition="'$(Configuration)' == 'Release'">WinExe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>AngelaAI</AssemblyName>
+    <AssemblyTitle>Ângela AI</AssemblyTitle>
+    <RootNamespace>AngelaAI</RootNamespace>
+    <Product>Ângela AI</Product>
+    <Title>Ângela AI</Title>
+    <Description>Ângela AI - Assistente pessoal inteligente</Description>
+    <Company>RHBM</Company>
+    <Copyright>Copyright RHBM</Copyright>
+    <Version>0.8.0</Version>
+    <FileVersion>0.8.0.0</FileVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseAppHost>true</UseAppHost>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+</Project>
