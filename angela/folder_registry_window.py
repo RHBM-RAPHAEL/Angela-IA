@@ -1,6 +1,8 @@
 """Small Qt window to paste folder paths and give voice-friendly names."""
 from __future__ import annotations
 
+import threading
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel,
@@ -14,10 +16,15 @@ from .folder_registry import FolderRegistry
 class FolderRegistryWindow(QWidget):
     saved = Signal(str)
     error = Signal(str)
+    operation_done = Signal(str, bool, str, object)
 
     def __init__(self, parent=None, *, registry: FolderRegistry | None = None):
         super().__init__(parent)
         self.registry = registry or FolderRegistry()
+        self._pending_operation = False
+        # Worker thread returns results through a queued Qt signal; it must
+        # never manipulate widgets from outside the GUI thread.
+        self.operation_done.connect(self._finish_operation)
         self.setObjectName("angelaFolderRegistry")
         self.setWindowTitle("Ângela AI · Minhas pastas")
         self.setWindowFlags(
@@ -110,18 +117,55 @@ class FolderRegistryWindow(QWidget):
         if folder:
             self.path_edit.setText(folder.replace("/", "\\"))
 
-    def _save(self):
-        try:
-            target = self.registry.save(
-                self.alias_edit.text(), self.path_edit.text()
-            )
-            self.status.setText(
-                "Pasta salva. Agora diga: abra a pasta " + self.alias_edit.text()
-            )
-            self.saved.emit(self.alias_edit.text().strip())
+    def _run_async(self, operation: str, handler):
+        """Return to Qt immediately, even if Windows stalls on folder I/O."""
+        if self._pending_operation:
+            return
+        self._pending_operation = True
+        self.save_button.setEnabled(False)
+        self.open_button.setEnabled(False)
+        self.remove_button.setEnabled(False)
+        self.status.setText("Verificando pasta..." if operation == "save"
+                            else "Processando...")
+        def worker():
+            try:
+                result = handler()
+                self.operation_done.emit(operation, True, "", result)
+            except (OSError, ValueError, RuntimeError, PermissionError) as exc:
+                self.operation_done.emit(
+                    operation, False, str(exc)[:200], None
+                )
+        threading.Thread(
+            target=worker, daemon=True, name="angela-folder-ui"
+        ).start()
+
+    def _finish_operation(self, operation: str, ok: bool, message: str, result):
+        self._pending_operation = False
+        self.save_button.setEnabled(True)
+        self.open_button.setEnabled(True)
+        self.remove_button.setEnabled(True)
+        if not ok:
+            self._error(message or "Não foi possível acessar a pasta.")
+            return
+        if operation == "save":
+            self.status.setText("Pasta salva. Agora diga: abra a pasta " + str(result))
+            self.saved.emit(str(result))
             self.refresh()
-        except (ValueError, OSError) as exc:
-            self._error(str(exc))
+        elif operation == "open":
+            self.status.setText(str(result) if result
+                                else "Pasta não encontrada.")
+        elif operation == "remove":
+            self.status.setText("Pasta removida." if result
+                                else "Pasta não encontrada.")
+            self.refresh()
+
+    def _save(self):
+        alias = self.alias_edit.text().strip()
+        path = self.path_edit.text().strip()
+        # Capture input on the GUI thread; only disk I/O goes to worker.
+        self._run_async(
+            "save", lambda: (self.registry.save(alias, path), alias)[1]
+        )
 
     def _selection(self):
         item = self.listing.currentItem()
@@ -143,19 +187,13 @@ class FolderRegistryWindow(QWidget):
         key = self._selection()
         if key is None:
             return
-        answer = self.registry.open_alias(key)
-        self.status.setText(answer or "Pasta não encontrada.")
+        self._run_async("open", lambda: self.registry.open_alias(key))
 
     def _remove(self):
         key = self._selection()
         if key is None:
             return
-        try:
-            if self.registry.remove(key):
-                self.status.setText("Pasta removida: " + key)
-                self.refresh()
-        except (ValueError, OSError):
-            self._error("Não consegui remover essa pasta.")
+        self._run_async("remove", lambda: self.registry.remove(key))
 
     def _error(self, message: str):
         self.status.setText(message)

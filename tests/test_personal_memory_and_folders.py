@@ -5,6 +5,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import os
 import sys
+import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -169,6 +171,47 @@ class FolderTests(unittest.TestCase):
         self.assertFalse(self.registry.remove("fotos"))
         self.assertEqual(self.registry.all(), {})
 
+    @staticmethod
+    def _pump_qt_until(app, predicate, seconds=3.0):
+        limit = time.monotonic() + seconds
+        while not predicate() and time.monotonic() < limit:
+            app.processEvents()
+            time.sleep(0.01)
+        if not predicate():
+            raise AssertionError("Qt não processou o evento dentro do prazo")
+
+    def test_qt_window_keeps_processing_events_during_slow_save(self):
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication
+        from angela.folder_registry_window import FolderRegistryWindow
+        app = QApplication.instance() or QApplication([])
+        window = FolderRegistryWindow(registry=self.registry)
+        started, release = threading.Event(), threading.Event()
+        original = self.registry.save
+        def slow_save(*args):
+            started.set()
+            release.wait(2.0)
+            return original(*args)
+        self.registry.save = slow_save
+        try:
+            window.alias_edit.setText("Curso de programação")
+            window.path_edit.setText(str(self.directory))
+            heartbeat = []
+            window._save()
+            self.assertTrue(started.wait(1))
+            QTimer.singleShot(15, lambda: heartbeat.append("Qt responsive"))
+            self._pump_qt_until(app, lambda: bool(heartbeat))
+            self.assertTrue(window._pending_operation)
+            self.assertFalse(window.save_button.isEnabled())
+            release.set()
+            self._pump_qt_until(app, lambda: not window._pending_operation)
+            self.assertEqual(window.listing.count(), 1)
+            self.assertIn("Pasta salva", window.status.text())
+        finally:
+            release.set()
+            window.close()
+
     def test_qt_paste_window_with_simulated_storage(self):
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
         from PySide6.QtWidgets import QApplication
@@ -180,12 +223,15 @@ class FolderTests(unittest.TestCase):
             window.alias_edit.setText("Meus projetos")
             window.path_edit.setText(str(self.directory))
             window._save()
+            self._pump_qt_until(app, lambda: not window._pending_operation)
             self.assertIn("Meus projetos", self.registry.all())
             self.assertEqual(window.listing.count(), 1)
             window.listing.setCurrentRow(0)
             window._open()
+            self._pump_qt_until(app, lambda: not window._pending_operation)
             self.fake_open.assert_called_once()
             window._remove()
+            self._pump_qt_until(app, lambda: not window._pending_operation)
             self.assertEqual(window.listing.count(), 0)
         finally:
             window.close()
