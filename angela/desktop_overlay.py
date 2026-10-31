@@ -9,8 +9,8 @@ if sys.platform != "win32":
     raise SystemExit("Overlay disponível apenas no Windows.")
 
 from PySide6.QtCore import Qt, QUrl, QTimer
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QColor, QIcon
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -21,6 +21,7 @@ from .feedback_store import (
 from .states import AngelaState, AngelaStateMachine
 from .voice_coordinator import VoiceCoordinator
 from .camera_preview import CameraPreviewBridge
+from .mini_overlay import MiniAngelaOverlay, LOGO_SOURCES
 from .actions import normalize
 from .audit_log import record
 
@@ -47,6 +48,24 @@ class HologramOverlay(QWebEngineView):
             | Qt.WindowType.Tool
         )
         self.state_machine = AngelaStateMachine()
+        # Janela pequena, acima de aplicativos normais (inclusive Opera).
+        # Independente do holograma grande, que continua click-through.
+        self.mini_overlay = MiniAngelaOverlay()
+        self.mini_overlay.set_state(self.state_machine.state)
+        self.tray_icon = QSystemTrayIcon(self)
+        for icon_path in LOGO_SOURCES:
+            if icon_path.exists():
+                self.tray_icon.setIcon(QIcon(str(icon_path)))
+                break
+        self.tray_icon.setToolTip("Ângela AI · Iniciando")
+        self.tray_menu = QMenu()
+        self.tray_show_action = self.tray_menu.addAction("Mostrar mini-Ângela")
+        self.tray_show_action.triggered.connect(self.show_mini_overlay)
+        self.tray_menu.addAction("Ocultar mini-Ângela", self.mini_overlay.hide)
+        self.tray_icon.setContextMenu(self.tray_menu)
+        self.tray_icon.activated.connect(self._on_tray_activated)
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray_icon.show()
         self.voice_coordinator = None
         self.camera_bridge = CameraPreviewBridge(
             self, status_callback=self.set_camera_status
@@ -91,8 +110,24 @@ class HologramOverlay(QWebEngineView):
             lambda count: print("CANVAS_COUNT", count, flush=True),
         )
 
+    def show_mini_overlay(self):
+        self.mini_overlay.show()
+        self.mini_overlay.raise_()
+
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.show_mini_overlay()
+
     def set_state(self, state):
         selected = self.state_machine.transition(state)
+        self.mini_overlay.set_state(selected)
+        self.tray_icon.setToolTip(
+            "Ângela AI · " + {
+                "ready": "Pronta", "starting": "Iniciando",
+                "listening": "Ouvindo", "processing": "Pensando",
+                "speaking": "Falando"
+            }.get(selected.value, selected.value)
+        )
         self.page().runJavaScript("window.angelaSetState(" + repr(selected.value) + ")")
         statuses = {
             "ready": "Microfone ligado · diga Ângela",
@@ -105,12 +140,14 @@ class HologramOverlay(QWebEngineView):
         print("ANGELA_STATE", selected.value, flush=True)
 
     def set_voice_level(self, level):
+        self.mini_overlay.set_voice_level(level)
         self.page().runJavaScript(
             f"window.angelaSetVoiceLevel({max(0.0, min(1.0, float(level))):.3f})"
         )
 
     def set_mic_level(self, level):
         level = max(0.0, min(1.0, float(level)))
+        self.mini_overlay.set_mic_level(level)
         self.page().runJavaScript(f"window.angelaSetMicLevel({level:.3f})")
         self.chat_panel.set_microphone_level(level)
 
@@ -237,6 +274,7 @@ class HologramOverlay(QWebEngineView):
         results = (
             protect_own_window(int(self.winId())),
             protect_own_window(int(self.chat_panel.winId())),
+            protect_own_window(int(self.mini_overlay.winId())),
         )
         print("ANGELA_VISION_OVERLAY_EXCLUDED", results, flush=True)
 
@@ -264,6 +302,8 @@ class HologramOverlay(QWebEngineView):
     def closeEvent(self, event):
         # Fecha a webcam antes do Qt, mesmo em encerramento da Ângela.
         self.camera_bridge.close_from_gui()
+        self.mini_overlay.close()
+        self.tray_icon.hide()
         for window in list(self.result_windows.values()):
             window.close()
         self.result_windows.clear()
@@ -287,6 +327,7 @@ def main():
     overlay = HologramOverlay()
     overlay.show()
     overlay.chat_panel.show()
+    overlay.show_mini_overlay()
     QTimer.singleShot(750, overlay.protect_vision_capture)
     if os.environ.get("ANGELA_ENABLE_VOICE", "") == "1":
         QTimer.singleShot(900, overlay.enable_voice)
