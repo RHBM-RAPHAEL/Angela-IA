@@ -39,7 +39,7 @@ class VoiceCoordinator:
         self.set_state = set_state
         self.on_message = on_message or (lambda message: print("ANGELA_REPLY", ascii(message), flush=True))
         self.events = queue.Queue()
-        self.listener = WakeListener(lambda kind, value: self.events.put((kind, value)))
+        self.listener = WakeListener(lambda kind, value: self.events.put((kind, value)), follow_up_seconds=20.0)
         self.active = False
         self.busy = False
         self.engine = None
@@ -108,6 +108,12 @@ class VoiceCoordinator:
         self._discard_pending_events()
         self._wake_activated_ns = None
         self._command_ready_ns = None
+        # Não reaproveitar foto descrita/autorizações após encerrar sessão.
+        if self.engine is not None:
+            if hasattr(self.engine, "visual_context"):
+                self.engine.visual_context.forget()
+            if hasattr(self.engine, "_equation_source_pending"):
+                self.engine._equation_source_pending = False
 
     def listen_follow_up(self):
         self.busy = False
@@ -278,7 +284,19 @@ class VoiceCoordinator:
                 self.feedback_pending = self._next_reportable
                 self._next_reportable = False
                 self.on_feedback_prompt(self.feedback_pending)
-                self.awaiting_answer = not self.conversation_closed and invites_answer(value)
+                # Estado do diálogo é mais confiável que a pontuação do TTS:
+                # "Posso ativar a câmera? Responda sim ou não." é pergunta.
+                # Mesmo se a IA omitir '?', consentimentos continuam em espera.
+                pending = False
+                if self.engine is not None:
+                    pending = bool(
+                        getattr(self.engine, "_vision_pending", None) or
+                        getattr(self.engine, "_face_pending", None) or
+                        getattr(self.engine, "_equation_source_pending", False)
+                    )
+                self.awaiting_answer = not self.conversation_closed and (
+                    pending or invites_answer(value)
+                )
                 try:
                     self.on_message(value)
                 except (UnicodeError, OSError) as exc:

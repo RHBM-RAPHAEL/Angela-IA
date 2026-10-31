@@ -22,10 +22,26 @@ def wants_to_end(text: str) -> bool:
 
 
 def invites_answer(reply: str) -> bool:
-    """Conservative question detection; errors and rhetorical statements don't rearm."""
+    """Detect a real question even when a statement follows its punctuation.
+
+    Speech-to-text and AI formatting sometimes produce:
+    "Posso abrir a câmera? Diga sim ou não." In that case the listener
+    should rearm after TTS finishes, never while the speaker is playing.
+    """
     value = reply.strip()
-    if not value or "?" not in value:
+    if not value:
         return False
-    if value.startswith(("Falha ", "Não foi possível", "Consigo executar comandos locais")):
+    norm = normalized(value)
+    if norm.startswith(("falha ", "nao foi possivel",
+                        "consigo executar comandos locais")):
         return False
-    return bool(re.search(r"\?\s*(?:[.!…]*\s*)?$", value))
+    if "?" in value:
+        return True
+    # Some generated questions are missing question marks altogether.
+    return bool(re.search(
+        r"^(?:posso\s+(?:ativar|ligar|capturar|abrir)|"
+        r"voce\s+(?:autoriza|confirma|permite)|"
+        r"quer\s+(?:que|apagar|continuar)|"
+        r"onde\s+esta|qual\s+(?:imagem|janela|arquivo)|"
+        r"pode\s+(?:confirmar|me\s+dizer))\b", norm
+    ))

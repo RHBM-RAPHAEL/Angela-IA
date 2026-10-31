@@ -100,7 +100,7 @@ class FaceMemoryTests(unittest.TestCase):
         frame = ScreenFrame(b"fake-photo", 640, 480, "camera")
         with patch("angela.camera_vision.capture_camera", return_value=frame) as camera:
             prompt = engine.reply("Você me reconhece pela câmera?")
-            self.assertIn("compará-la localmente", prompt)
+            self.assertIn("ativar a câmera", prompt)
             camera.assert_not_called()
             result = engine.reply("sim")
         self.assertIn("parece corresponder", result)

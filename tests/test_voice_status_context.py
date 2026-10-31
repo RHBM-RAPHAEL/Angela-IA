@@ -52,7 +52,7 @@ class VoiceStatusContextTests(unittest.TestCase):
         self.engine.face_profile = fake
         with patch("angela.camera_vision.capture_camera") as camera:
             ask = self.engine.reply("Você me conhece pela câmera?")
-            self.assertIn("Você autoriza", ask)
+            self.assertIn("ativar a câmera", ask)
             unclear = self.engine.reply("assim")
             self.assertIn("Não entendi sua resposta", unclear)
             self.assertEqual(self.engine._face_pending[0], "recognize")
@@ -64,7 +64,7 @@ class VoiceStatusContextTests(unittest.TestCase):
     def test_uncertain_yes_does_not_allow_screen_or_camera_capture(self):
         with patch("angela.camera_vision.capture_camera") as camera:
             ask = self.engine.reply("abra a câmera e me veja")
-            self.assertIn("Você autoriza", ask)
+            self.assertIn("enviar uma foto à IA", ask)
             unclear = self.engine.reply("assim")
             self.assertIn("Diga sim", unclear)
             self.assertIsNotNone(self.engine._vision_pending)

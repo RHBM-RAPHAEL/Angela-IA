@@ -107,7 +107,7 @@ class VisionTests(unittest.TestCase):
         with patch("angela.assistant.analyze_screen", return_value="Vejo um editor") as analyze:
             reply = engine.reply("Ângela, olha minha tela")
             self.assertIn("Posso capturar", reply)
-            self.assertIn("Groq", reply)
+            self.assertIn("enviá-la à IA", reply)
             self.assertTrue(invites_answer(reply))
             self.assertIn("tela inteira", reply)
             analyze.assert_not_called()

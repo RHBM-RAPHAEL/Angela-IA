@@ -86,10 +86,10 @@ class CameraVisionTests(unittest.TestCase):
         engine = AssistantEngine(chat=FakeChat())
         with patch("angela.assistant.analyze_camera") as analyzer:
             prompt = engine.reply("Ângela, consegue me ver pela webcam?")
-            self.assertIn("webcam", prompt)
-            self.assertIn("UMA foto", prompt)
-            self.assertIn("Groq", prompt)
-            self.assertIn("Você autoriza?", prompt)
+            self.assertIn("ativar a câmera", prompt)
+            self.assertIn("enviar uma foto à IA", prompt)
+            self.assertLess(len(prompt), 85)
+            self.assertTrue(prompt.endswith("?"))
             analyzer.assert_not_called()
             self.assertEqual(engine._vision_pending[0].scope, "camera")
 

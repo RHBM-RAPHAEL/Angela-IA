@@ -57,7 +57,7 @@ class ContextAsrTests(unittest.TestCase):
         engine.face_profile = face
         with patch("angela.camera_vision.capture_camera") as camera:
             reply = engine.reply("você me conhece pela câmera")
-            self.assertIn("compará-la localmente", reply)
+            self.assertIn("ativar a câmera", reply)
             self.assertEqual(engine._face_pending[0], "recognize")
             camera.assert_not_called()
 
