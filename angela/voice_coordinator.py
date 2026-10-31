@@ -126,7 +126,7 @@ class VoiceCoordinator:
             try:
                 from .speech import speak
                 from .command_quality import speech_summary
-                voice_text = speech_summary(message, limit=290)
+                voice_text = speech_summary(message, limit=225)
                 set_interaction(trace_id)
                 record('speech_attempt', method='edge_tts', provider='auto', characters=len(voice_text))
                 def first_audio():

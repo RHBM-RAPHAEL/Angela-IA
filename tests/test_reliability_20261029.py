@@ -124,8 +124,10 @@ class ReliabilityTests(unittest.TestCase):
         message = "## **Informações** " + ("Vou explicar os passos em detalhes. " * 25)
         speech = speech_summary(message, limit=290)
         self.assertLess(len(speech), len(message))
-        self.assertIn("resposta completa", speech)
+        self.assertNotIn("resposta completa", speech.casefold())
+        self.assertNotIn("no chat", speech.casefold())
         self.assertNotIn("**", speech)
+        self.assertTrue(speech.endswith((".", "!", "?")))
 
     @unittest.skipUnless(sys.platform == 'win32', 'O overlay gráfico só existe no Windows.')
     def test_feedback_tracks_action_not_yes(self):

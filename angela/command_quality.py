@@ -138,14 +138,43 @@ def execution_feedback_eligible(reply: str, attempted_action: bool) -> bool:
     )
     return not any(fail in s for fail in failures)
 
-def speech_summary(reply: str, limit: int = 350) -> str:
-    """TTS curto sem Markdown, mantendo íntegra a resposta exibida no painel."""
+def speech_summary(reply: str, limit: int = 240) -> str:
+    """Fala somente o essencial, sem encaminhar a pessoa para o painel.
+
+    A resposta original ainda pode ser lida na interface. Aqui removemos
+    introducoes vazias e preferimos frases completas em vez de truncamento
+    abrupto. A IA permanece disponivel para perguntas de acompanhamento.
+    """
     compact = re.sub(r"(?m)^\s*[-*#>]+\s*", "", str(reply))
     compact = re.sub(r"\*\*(.*?)\*\*|__(.*?)__", lambda m: m.group(1) or m.group(2), compact)
     compact = re.sub(r"`([^`]+)`", r"\1", compact)
     compact = re.sub(r"https?://\S+", "link", compact)
-    compact = " ".join(compact.split())
-    if len(compact) <= limit:
+    compact = re.sub(
+        r"(?i)\b(?:a resposta completa est[aá] no painel|"
+        r"o restante est[aá] no chat|leia o restante no chat|"
+        r"os detalhes est[aã]o no chat)\s*[.!?]?", "", compact
+    )
+    compact = re.sub(
+        r"(?i)^(?:ol[aá][!,]?\s*)?(?:aqui est[aá] (?:a descri[cç][aã]o|"
+        r"o que (?:eu )?vejo)(?: (?:dessa|desta|na) (?:imagem|foto|webcam))?"
+        r"\s*[:.!]?\s*)", "", compact.strip()
+    )
+    compact = " ".join(compact.split()).strip(" -;:")
+    if not compact:
+        return "Pode repetir sua pergunta?"
+    maximum = max(70, min(int(limit), 600))
+    if len(compact) <= maximum:
         return compact
-    short = compact[:limit].rsplit(" ", 1)[0].strip(" ,;:-")
-    return (short or compact[:limit]) + ". A resposta completa está no painel."
+    sentences = re.split(r"(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Ý0-9])", compact)
+    chosen = ""
+    for sentence in sentences:
+        candidate = (chosen + " " + sentence).strip()
+        if len(candidate) > maximum:
+            break
+        chosen = candidate
+        if len(chosen) >= maximum * 0.57:
+            break
+    if chosen and len(chosen) >= 32:
+        return chosen
+    cut = compact[:maximum].rsplit(" ", 1)[0].rstrip(" ,;:-")
+    return cut if cut.endswith((".", "!", "?")) else cut + "."

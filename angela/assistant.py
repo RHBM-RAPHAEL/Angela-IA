@@ -19,9 +19,10 @@ from .adaptive_memory import preference_request, save_preference, load_preferenc
 from .command_quality import normalize_request, clock_request, local_clock_reply, browser_intent, execution_feedback_eligible
 from .screen_vision import (
     parse_vision_request, confirmation_decision, analyze_screen,
-    VisionRequest,
+    VisionRequest, VisionError,
 )
 from .camera_vision import parse_camera_request, analyze_camera
+from .face_identity import FaceProfile, FaceIdentityError, face_intent
 from .result_routing import plan_result_request
 from .weather_result import get_weather, WeatherError
 from urllib.parse import quote
@@ -57,6 +58,8 @@ class AssistantEngine:
         self.last_result_view = None
         self.last_execution = False
         self._vision_pending: tuple[VisionRequest, float] | None = None
+        self._face_pending: tuple[str, float] | None = None
+        self.face_profile = FaceProfile()
         # Recebe uma função de interface da VoiceCoordinator, sem acoplar Qt.
         self.on_camera_status = lambda message: None
 
@@ -103,10 +106,61 @@ class AssistantEngine:
                 # Sem guardar imagens no histórico, no disco ou no log.
                 if request.scope == 'camera':
                     return analyze_camera(
-                        request, self.chat.api_key, status_cb=self.on_camera_status
+                        request, self.chat.api_key, status_cb=self.on_camera_status,
+                        identity_profile=self.face_profile
                     )
                 return analyze_screen(request, self.chat.api_key)
             # Outro assunto cancela a autorização anterior sem captura.
+
+        # Cadastro facial separado de identificacao verbal e capturas gerais.
+        pending_face = self._face_pending
+        if pending_face is not None:
+            self._face_pending = None
+            operation, expires = pending_face
+            decision = confirmation_decision(message)
+            if decision is False:
+                return 'Certo. Não vou acessar a webcam nem alterar seu cadastro facial.'
+            if decision is True:
+                if time.monotonic() > expires:
+                    return 'A autorização expirou. Peça novamente.'
+                if operation == 'delete':
+                    return 'Apaguei o cadastro facial local.' if self.face_profile.forget() else 'Não há cadastro facial.'
+                try:
+                    from .camera_vision import capture_camera
+                    frame = capture_camera(status_cb=self.on_camera_status)
+                    if operation == 'enroll':
+                        self.face_profile.enroll(frame.jpeg_bytes, name='Rafael')
+                        record('face_profile_enrolled', success=True)
+                        return 'Rosto cadastrado localmente como Rafael. Vou comparar somente fotos autorizadas.'
+                    name = self.face_profile.identify(frame.jpeg_bytes)
+                    record('face_profile_checked', matched=bool(name))
+                    if name:
+                        return 'O rosto parece corresponder ao cadastro de Rafael.'
+                    return 'Não consegui confirmar que é Rafael por esta foto.'
+                except (FaceIdentityError, VisionError) as exc:
+                    record('face_profile_error', category=type(exc).__name__)
+                    return str(exc)
+
+        request_face = face_intent(message)
+        if request_face in {'introduce', 'enroll'}:
+            if self.face_profile.enrolled():
+                return 'Sei que você se apresentou como Rafael, mas verifico o rosto apenas pela câmera, com autorização.'
+            self._face_pending = ('enroll', time.monotonic() + 75)
+            return (
+                'Entendi que você se chama Rafael. Para reconhecer seu rosto, '
+                'posso tirar uma foto e guardar somente uma referência facial '
+                'criptografada neste Windows. Não será usada como senha. Você autoriza?'
+            )
+        if request_face == 'recognize':
+            if not self.face_profile.enrolled():
+                return 'Ainda não tenho seu rosto cadastrado. Diga: cadastre meu rosto.'
+            self._face_pending = ('recognize', time.monotonic() + 75)
+            return 'Posso tirar uma foto pela webcam e compará-la localmente ao cadastro de Rafael? Você autoriza?'
+        if request_face == 'delete':
+            if not self.face_profile.enrolled():
+                return 'Não há cadastro facial para apagar.'
+            self._face_pending = ('delete', time.monotonic() + 75)
+            return 'Quer apagar definitivamente a referência facial salva neste Windows? Confirma?'
 
         camera_request = parse_camera_request(message)
         if camera_request is not None:

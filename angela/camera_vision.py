@@ -229,7 +229,7 @@ def capture_camera(*, frame_provider=None, status_cb=None) -> ScreenFrame:
 
 def analyze_camera(request: VisionRequest, api_key: str,
                    *, status_cb=None, capturer=capture_camera,
-                   analyzer=analyze_frame) -> str:
+                   analyzer=analyze_frame, identity_profile=None) -> str:
     """Capture e análise limitadas; nada é salvo em disco ou nos logs."""
     if request.scope != "camera":
         return "Essa solicitação não é de câmera."
@@ -238,9 +238,19 @@ def analyze_camera(request: VisionRequest, api_key: str,
             frame = capturer(status_cb=status_cb) if status_cb else capturer()
         record("camera_capture", width=frame.width, height=frame.height,
                bytes=len(frame.jpeg_bytes), scope="camera")
+        # Após consentimento, comparar localmente somente se houver perfil.
+        # Nenhum vetor biométrico é enviado ao modelo remoto.
+        matched_name = None
+        if identity_profile is not None and identity_profile.enrolled():
+            try:
+                matched_name = identity_profile.identify(frame.jpeg_bytes)
+            except Exception:
+                record("face_match_unavailable", category="local")
         with timed("visual_analysis"):
             result = analyzer(frame, request.question, api_key)
         record("camera_analysis", result_ready=bool(result))
+        if matched_name == "Rafael":
+            return "O rosto parece corresponder ao cadastro de Rafael. " + result
         return result
     except VisionError as exc:
         record("camera_error", category="capture")
