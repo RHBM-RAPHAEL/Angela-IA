@@ -22,6 +22,7 @@ from .states import AngelaState, AngelaStateMachine
 from .voice_coordinator import VoiceCoordinator
 from .camera_preview import CameraPreviewBridge
 from .mini_overlay import MiniAngelaOverlay, LOGO_SOURCES
+from .folder_registry_window import FolderRegistryWindow
 from .actions import normalize
 from .audit_log import record
 
@@ -62,6 +63,7 @@ class HologramOverlay(QWebEngineView):
         self.tray_show_action = self.tray_menu.addAction("Mostrar mini-Ângela")
         self.tray_show_action.triggered.connect(self.show_mini_overlay)
         self.tray_menu.addAction("Ocultar mini-Ângela", self.mini_overlay.hide)
+        self.tray_menu.addAction("Cadastrar pastas...", self.show_folder_registry)
         self.tray_icon.setContextMenu(self.tray_menu)
         self.tray_icon.activated.connect(self._on_tray_activated)
         if QSystemTrayIcon.isSystemTrayAvailable():
@@ -73,6 +75,7 @@ class HologramOverlay(QWebEngineView):
         self.feedback_candidate = ("", "")
         self.pending_confirmation_command = None
         self.result_windows = {}
+        self.folder_registry_window = None
         self._next_result_id = 0
         self.voice_timer = QTimer(self)
         self.voice_timer.timeout.connect(self._poll_voice)
@@ -91,6 +94,7 @@ class HologramOverlay(QWebEngineView):
         self.chat_panel = ConversationPanel()
         self.chat_panel.feedback_selected.connect(self.on_button_feedback)
         self.chat_panel.export_requested.connect(self.export_feedback_report)
+        self.chat_panel.folder_requested.connect(self.show_folder_registry)
         self.chat_panel.stop_requested.connect(self.close)
         for entry in recent_conversation(18):
             self.chat_panel.add_message(
@@ -164,6 +168,18 @@ class HologramOverlay(QWebEngineView):
             "window.angelaShowPanel(" + json.dumps(payload, ensure_ascii=False) + ")"
         )
         print("ANGELA_PANEL", len(payload.get("items", [])), flush=True)
+
+    def show_folder_registry(self):
+        """Abrir uma única telinha interativa sem encerrar o microfone."""
+        if self.folder_registry_window is None:
+            self.folder_registry_window = FolderRegistryWindow()
+            self.folder_registry_window.destroyed.connect(
+                lambda _=None: setattr(self, 'folder_registry_window', None)
+            )
+        self.folder_registry_window.refresh()
+        self.folder_registry_window.show()
+        self.folder_registry_window.raise_()
+        self.folder_registry_window.activateWindow()
 
     def show_result_view(self, payload):
         """Executado somente na thread grafica atraves do poll do coordenador."""
@@ -289,6 +305,7 @@ class HologramOverlay(QWebEngineView):
             self.voice_coordinator.on_camera_status = self.set_camera_status
             self.voice_coordinator.on_panel = self.show_panel
             self.voice_coordinator.on_result_view = self.show_result_view
+            self.voice_coordinator.on_folder_registry = self.show_folder_registry
             self.voice_coordinator.on_transcript = self.show_transcript
             self.voice_coordinator.on_understanding = self.show_understanding
             self.voice_coordinator.on_reply = self.show_reply
@@ -302,6 +319,8 @@ class HologramOverlay(QWebEngineView):
     def closeEvent(self, event):
         # Fecha a webcam antes do Qt, mesmo em encerramento da Ângela.
         self.camera_bridge.close_from_gui()
+        if self.folder_registry_window is not None:
+            self.folder_registry_window.close()
         self.mini_overlay.close()
         self.tray_icon.hide()
         for window in list(self.result_windows.values()):

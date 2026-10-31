@@ -16,6 +16,8 @@ from .command_clarification import CommandClarification
 from .intent_confirmation import IntentConfirmation
 from .project_listing import list_request, list_folders, listing_reply
 from .adaptive_memory import preference_request, save_preference, load_preferences
+from .personal_memory import PersonalMemory, memory_request
+from .folder_registry import FolderRegistry, folder_ui_request, folder_alias_request
 from .command_quality import normalize_request, clock_request, local_clock_reply, browser_intent, execution_feedback_eligible, voice_status_request
 from .screen_vision import (
     parse_vision_request, confirmation_decision, analyze_screen,
@@ -45,6 +47,8 @@ HELP_MESSAGE = (
     "qualquer imagem à IA Groq. "
     "Também posso mostrar previsão do tempo, vídeos do YouTube e respostas "
     "em janelas próprias, ou abrir pesquisas no navegador. "
+    "Também posso guardar informações quando você disser salve na memória, "
+    "ou abrir uma janela para cadastrar atalhos de pastas. "
     "Se configurar a chave Groq, também podemos conversar sobre outros assuntos."
 )
 
@@ -63,6 +67,7 @@ class AssistantEngine:
         self.last_interpretation = None
         self.last_panel = None
         self.last_result_view = None
+        self.last_folder_registry_view = False
         self.last_execution = False
         self._vision_pending: tuple[VisionRequest, float] | None = None
         self._face_pending: tuple[str, float] | None = None
@@ -72,6 +77,9 @@ class AssistantEngine:
         # Apenas descrição textual recente em RAM. Nunca imagem, áudio ou biometria.
         self.visual_context = RecentVisualContext()
         self._equation_source_pending = False
+        self.personal_memory = PersonalMemory()
+        self._personal_memory_pending = False
+        self.folder_registry = FolderRegistry()
         # Recebe uma função de interface da VoiceCoordinator, sem acoplar Qt.
         self.on_camera_status = lambda message: None
 
@@ -88,10 +96,71 @@ class AssistantEngine:
         heard_message = message
         self.last_panel = None
         self.last_result_view = None
+        self.last_folder_registry_view = False
         self.last_execution = False
         self.last_interpretation = None
         if not message:
             return "Escreva uma mensagem ou utilize o botão Ouvir."
+
+        # Memória persistente SOMENTE sob pedido explícito. Não inferir fatos
+        # de conversas, microfone, câmera ou histórico. Conteúdo não vai ao log.
+        request = memory_request(message)
+        if request is not None:
+            kind, content = request
+            if kind == "save":
+                if not content:
+                    self._personal_memory_pending = True
+                    return 'O que você quer que eu salve na memória?'
+                self._personal_memory_pending = False
+                try:
+                    self.personal_memory.add(content)
+                    record('user_memory_saved', size_bucket='short')
+                    return 'Salvei na memória. Vou lembrar quando você perguntar.'
+                except (OSError, ValueError, RuntimeError) as exc:
+                    return 'Não consegui salvar: ' + str(exc)[:110]
+            self._personal_memory_pending = False
+            if kind == "list":
+                try:
+                    facts = self.personal_memory.all()
+                    return ('Não há informações salvas na memória.'
+                            if not facts else 'Lembro que ' + '; '.join(facts[:8]) + '.')
+                except (OSError, ValueError, RuntimeError):
+                    return 'Não consegui ler sua memória local.'
+            if kind == "forget":
+                if not content:
+                    return 'Sobre qual assunto quer que eu apague a memória?'
+                try:
+                    deleted = self.personal_memory.forget(content)
+                    record('user_memory_forget', count=deleted)
+                    return ('Apaguei essa informação da memória.'
+                            if deleted else 'Não encontrei uma memória sobre isso.')
+                except (OSError, ValueError, RuntimeError):
+                    return 'Não consegui alterar a memória local.'
+        if self._personal_memory_pending:
+            self._personal_memory_pending = False
+            if normalize(message) in {'nao', 'cancelar', 'cancela', 'deixa pra la'}:
+                return 'Certo. Não vou guardar nada.'
+            try:
+                self.personal_memory.add(message)
+                record('user_memory_saved', size_bucket='short')
+                return 'Salvei na memória.'
+            except (OSError, ValueError, RuntimeError) as exc:
+                return 'Não consegui salvar: ' + str(exc)[:110]
+
+        # Gerenciador visual de pastas e atalhos que o usuário cadastrou.
+        if folder_ui_request(message):
+            self.last_folder_registry_view = True
+            record('folder_registry_ui_requested')
+            return 'Abri a janela para cadastrar seus caminhos de pastas.'
+        alias = folder_alias_request(message)
+        if alias:
+            try:
+                opened = self.folder_registry.open_alias(alias)
+            except (OSError, ValueError, RuntimeError):
+                opened = 'Não consegui consultar as pastas cadastradas.'
+            if opened is not None:
+                record('folder_alias_request', matched=True)
+                return self._as_action(opened) if opened.startswith('Abri ') else opened
 
         # "Ative a visão computacional" autoriza somente prévia LOCAL ao
         # vivo. Não compartilha fotos, não ativa Groq, não grava vídeo.
@@ -538,5 +607,18 @@ class AssistantEngine:
                 record('agent_fallback_plan', steps=plan)
         if plan:
             return self._as_action(execute_plan(plan, self.windows))
+        # Perguntas pessoais usam somente fatos explicitamente salvos.
+        # Não injetamos essa memória privada no pedido remoto da Groq.
+        personal = normalize(message)
+        if any(word in personal for word in (
+            'meu ', 'minha ', 'meus ', 'minhas ', 'sobre mim', 'eu gosto',
+            'eu prefiro', 'voce lembra', 'voce sabe de mim'
+        )):
+            try:
+                known = self.personal_memory.relevant(message)
+            except (OSError, ValueError, RuntimeError):
+                known = []
+            if known:
+                return 'Você me contou que ' + '; '.join(known) + '.'
         record('routing_attempt', method='groq_chat')
         return self.chat.ask(message)

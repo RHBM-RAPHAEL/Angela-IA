@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 class ConversationPanel(QWidget):
     feedback_selected = Signal(bool)
     export_requested = Signal()
+    folder_requested = Signal()
     stop_requested = Signal()
 
     def __init__(self):
@@ -70,6 +71,10 @@ class ConversationPanel(QWidget):
         export_button.setToolTip("Salvar histórico e feedback em arquivo local")
         export_button.clicked.connect(self.export_requested.emit)
         header.addWidget(export_button)
+        folder_button = QPushButton("Pastas")
+        folder_button.setToolTip("Colar caminhos e cadastrar pastas para abrir por voz")
+        folder_button.clicked.connect(self.folder_requested.emit)
+        header.addWidget(folder_button)
         stop_button = QPushButton('×')
         stop_button.setFixedWidth(28)
         stop_button.setToolTip('Encerrar a Ângela sem desligar o Windows')

@@ -56,6 +56,7 @@ class VoiceCoordinator:
         self._command_ready_ns = None
         self.on_panel = lambda payload: None
         self.on_result_view = lambda payload: None
+        self.on_folder_registry = lambda: None
         self.on_transcript = lambda payload: None
         self.on_understanding = lambda text: None
         self.on_reply = lambda payload: None
@@ -178,6 +179,9 @@ class VoiceCoordinator:
                     reportable = bool(self.engine.last_execution)
                     panel = self.engine.last_panel
                     result_view = self.engine.last_result_view
+                    folder_registry_view = self.engine.last_folder_registry_view
+                if folder_registry_view:
+                    self._emit_if_current(epoch, 'folder_registry', True)
                 if interpretation:
                     self._emit_if_current(epoch, 'understanding', interpretation)
                 self._emit_if_current(epoch, 'execution_reportable', reportable)
@@ -209,6 +213,8 @@ class VoiceCoordinator:
                 self._next_reportable = bool(value)
             elif kind == 'panel':
                 self.on_panel(value)
+            elif kind == 'folder_registry' and self.active:
+                self.on_folder_registry()
             elif kind == 'result_view' and self.active:
                 try:
                     self.on_result_view(value)
@@ -294,7 +300,8 @@ class VoiceCoordinator:
                     pending = bool(
                         getattr(self.engine, "_vision_pending", None) or
                         getattr(self.engine, "_face_pending", None) or
-                        getattr(self.engine, "_equation_source_pending", False)
+                        getattr(self.engine, "_equation_source_pending", False) or
+                        getattr(self.engine, "_personal_memory_pending", False)
                     )
                 self.awaiting_answer = not self.conversation_closed and (
                     pending or invites_answer(value)
