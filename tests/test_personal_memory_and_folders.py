@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import inspect
 from tempfile import TemporaryDirectory
 import os
 import sys
@@ -211,6 +212,8 @@ class FolderTests(unittest.TestCase):
         finally:
             release.set()
             window.close()
+            window.deleteLater()
+            app.processEvents()
 
     def test_qt_paste_window_with_simulated_storage(self):
         os.environ["QT_QPA_PLATFORM"] = "offscreen"
@@ -220,6 +223,31 @@ class FolderTests(unittest.TestCase):
         window = FolderRegistryWindow(registry=self.registry)
         try:
             self.assertIn("caminho da pasta", window.path_edit.accessibleName())
+            # Browse inside the same Qt window; never open native picker.
+            self.assertNotIn("QFileDialog", inspect.getsource(window._browse))
+            child = self.directory / "Curso Dart"
+            child.mkdir()
+            window.path_edit.setText(str(self.directory))
+            window._browse()
+            self._pump_qt_until(
+                app, lambda: window._browse_current == str(self.directory)
+                and window.browse_list.count() == 1
+                and window.browse_list.item(0).text() == "Curso Dart"
+            )
+            self.assertTrue(window._browse_open)
+            window._browse_enter(window.browse_list.item(0))
+            self._pump_qt_until(
+                app, lambda: window._browse_current == str(child)
+                and window.status.text().startswith("Abra uma pasta")
+            )
+            window._browse_up()
+            self._pump_qt_until(
+                app, lambda: window._browse_current == str(self.directory)
+                and window.status.text().startswith("Abra uma pasta")
+            )
+            window._browse_choose()
+            self.assertFalse(window._browse_open)
+            self.assertEqual(window.path_edit.text(), str(self.directory))
             window.alias_edit.setText("Meus projetos")
             window.path_edit.setText(str(self.directory))
             window._save()
@@ -234,7 +262,11 @@ class FolderTests(unittest.TestCase):
             self._pump_qt_until(app, lambda: not window._pending_operation)
             self.assertEqual(window.listing.count(), 0)
         finally:
+            for worker in window._browse_workers:
+                worker.join(timeout=1.0)
             window.close()
+            window.deleteLater()
+            app.processEvents()
 
 
 if __name__ == "__main__":

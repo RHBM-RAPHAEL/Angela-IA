@@ -1,12 +1,14 @@
 """Small Qt window to paste folder paths and give voice-friendly names."""
 from __future__ import annotations
 
+import os
+import ntpath
 import threading
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QMessageBox, QPushButton,
+    QApplication, QFrame, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QPushButton,
     QVBoxLayout, QWidget,
 )
 
@@ -17,11 +19,17 @@ class FolderRegistryWindow(QWidget):
     saved = Signal(str)
     error = Signal(str)
     operation_done = Signal(str, bool, str, object)
+    browse_ready = Signal(int, str, list, str)
 
     def __init__(self, parent=None, *, registry: FolderRegistry | None = None):
         super().__init__(parent)
         self.registry = registry or FolderRegistry()
         self._pending_operation = False
+        self._browse_request_id = 0
+        self._browse_workers = []
+        self._browse_current = ""
+        self._browse_open = False
+        self.browse_ready.connect(self._finish_browse)
         # Worker thread returns results through a queued Qt signal; it must
         # never manipulate widgets from outside the GUI thread.
         self.operation_done.connect(self._finish_operation)
@@ -71,6 +79,46 @@ class FolderRegistryWindow(QWidget):
         path_line.addWidget(choose)
         layout.addLayout(path_line)
 
+        # Our own inline folder browser. No Windows native Shell dialog and
+        # no modal Qt event loop; even slow drives are listed off-thread.
+        self.browse_panel = QFrame(self)
+        self.browse_panel.setObjectName("angelaFolderBrowser")
+        self.browse_panel.setStyleSheet(
+            "QFrame#angelaFolderBrowser { border: 1px solid #385d7d;"
+            "border-radius: 7px; background: #142337; }"
+        )
+        browse_layout = QVBoxLayout(self.browse_panel)
+        browse_layout.addWidget(QLabel("Escolha uma pasta neste computador"))
+        location_line = QHBoxLayout()
+        self.browse_location = QLineEdit()
+        self.browse_location.setPlaceholderText(r"Ex.: D:\Curso de Dart e Flutter")
+        self.browse_location.returnPressed.connect(self._browse_go)
+        location_line.addWidget(self.browse_location, 1)
+        go_button = QPushButton("Ir")
+        go_button.clicked.connect(self._browse_go)
+        location_line.addWidget(go_button)
+        up_button = QPushButton("Voltar")
+        up_button.clicked.connect(self._browse_up)
+        location_line.addWidget(up_button)
+        browse_layout.addLayout(location_line)
+        self.browse_list = QListWidget()
+        self.browse_list.setMinimumHeight(130)
+        self.browse_list.itemDoubleClicked.connect(self._browse_enter)
+        browse_layout.addWidget(self.browse_list)
+        browser_actions = QHBoxLayout()
+        choose_button = QPushButton("Usar esta pasta")
+        choose_button.clicked.connect(self._browse_choose)
+        browser_actions.addWidget(choose_button)
+        drives_button = QPushButton("Unidades")
+        drives_button.clicked.connect(lambda: self._browse_to(""))
+        browser_actions.addWidget(drives_button)
+        cancel_button = QPushButton("Fechar busca")
+        cancel_button.clicked.connect(self._browse_hide)
+        browser_actions.addWidget(cancel_button)
+        browse_layout.addLayout(browser_actions)
+        self.browse_panel.hide()
+        layout.addWidget(self.browse_panel)
+
         self.save_button = QPushButton("Salvar pasta")
         self.save_button.clicked.connect(self._save)
         layout.addWidget(self.save_button)
@@ -111,11 +159,116 @@ class FolderRegistryWindow(QWidget):
             self._error("Não foi possível carregar as pastas.")
 
     def _browse(self):
-        folder = QFileDialog.getExistingDirectory(
-            self, "Escolha uma pasta", self.path_edit.text().strip()
+        """Show an inline browser; never call Qt/Windows modal file pickers."""
+        if self._browse_open:
+            self._browse_hide()
+            return
+        self._browse_open = True
+        self.browse_panel.show()
+        self.resize(max(560, self.width()), max(650, self.height()))
+        self._browse_to(self.path_edit.text().strip())
+
+    def _browse_hide(self):
+        self._browse_open = False
+        self.browse_panel.hide()
+        self._browse_request_id += 1  # Ignore late directory listings.
+        self.resize(self.width(), 460)
+
+    def _browse_to(self, path):
+        """List just folders on a worker: slow disks never freeze the UI."""
+        value = str(path).strip().strip('"').replace("/", "\\")
+        self._browse_request_id += 1
+        request_id = self._browse_request_id
+        self.browse_location.setText(value)
+        self.browse_list.clear()
+        self.browse_list.addItem("Carregando pastas...")
+        self.status.setText("Buscando pastas no computador...")
+
+        def worker():
+            entries = []
+            error = ""
+            try:
+                if not value:
+                    # Windows local/mapped drives, without Shell dialogs.
+                    entries = [(drive, drive) for drive in os.listdrives()]
+                elif not (len(value) >= 3 and value[1:3] == ":\\"
+                          and value[0].isalpha()
+                          and not value.startswith("\\\\")):
+                    error = "Selecione um caminho local, como D:\\Meus Cursos."
+                else:
+                    with os.scandir(value) as listing:
+                        for entry in listing:
+                            try:
+                                if entry.is_dir(follow_symlinks=False):
+                                    entries.append((entry.name, entry.path))
+                            except OSError:
+                                continue
+                            if len(entries) >= 600:
+                                break
+                    entries.sort(key=lambda item: item[0].casefold())
+            except (OSError, ValueError, PermissionError) as exc:
+                error = "Não consegui listar essa pasta. Confira o caminho."
+            try:
+                self.browse_ready.emit(request_id, value, entries, error)
+            except RuntimeError:
+                pass  # Window was closed during slow filesystem access.
+
+        thread = threading.Thread(
+            target=worker, daemon=True, name="angela-folder-browser"
         )
-        if folder:
-            self.path_edit.setText(folder.replace("/", "\\"))
+        self._browse_workers = [
+            existing for existing in self._browse_workers if existing.is_alive()
+        ]
+        self._browse_workers.append(thread)
+        thread.start()
+
+    def _finish_browse(self, request_id, path, entries, error):
+        if request_id != self._browse_request_id or not self._browse_open:
+            return
+        self.browse_list.clear()
+        if error:
+            self._browse_current = ""
+            self.status.setText(error)
+            return
+        self._browse_current = path
+        if not entries:
+            self.browse_list.addItem("Nenhuma subpasta encontrada.")
+        else:
+            for name, location in entries:
+                item = QListWidgetItem(name)
+                item.setData(Qt.ItemDataRole.UserRole, location)
+                self.browse_list.addItem(item)
+        self.status.setText(
+            "Abra uma pasta com dois cliques ou use 'Usar esta pasta'."
+        )
+
+    def _browse_go(self):
+        self._browse_to(self.browse_location.text())
+
+    def _browse_enter(self, item):
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if path:
+            self._browse_to(path)
+
+    def _browse_up(self):
+        current = self._browse_current
+        if not current:
+            return
+        if len(current.rstrip("\\/")) == 2 and current[1] == ":":
+            self._browse_to("")
+            return
+        parent = ntpath.dirname(current.rstrip("\\/"))
+        if len(parent) == 2 and parent[1] == ":":
+            parent += "\\"
+        self._browse_to(parent if parent != current else "")
+
+    def _browse_choose(self):
+        if not self._browse_open or not self._browse_current:
+            self._error("Escolha primeiro uma unidade e uma pasta.")
+            return
+        self.path_edit.setText(self._browse_current)
+        self.status.setText("Pasta selecionada. Clique em Salvar pasta.")
+        self._browse_hide()
 
     def _run_async(self, operation: str, handler):
         """Return to Qt immediately, even if Windows stalls on folder I/O."""
