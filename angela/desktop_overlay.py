@@ -20,6 +20,7 @@ from .feedback_store import (
 )
 from .states import AngelaState, AngelaStateMachine
 from .voice_coordinator import VoiceCoordinator
+from .camera_preview import CameraPreviewBridge
 from .actions import normalize
 from .audit_log import record
 
@@ -47,6 +48,9 @@ class HologramOverlay(QWebEngineView):
         )
         self.state_machine = AngelaStateMachine()
         self.voice_coordinator = None
+        self.camera_bridge = CameraPreviewBridge(
+            self, status_callback=self.set_camera_status
+        )
         self.feedback_candidate = ("", "")
         self.pending_confirmation_command = None
         self.result_windows = {}
@@ -240,6 +244,7 @@ class HologramOverlay(QWebEngineView):
         record('voice_enable_attempt')
         if self.voice_coordinator is None:
             self.voice_coordinator = VoiceCoordinator(self.set_state)
+            self.voice_coordinator.camera_bridge = self.camera_bridge
             self.voice_coordinator.on_voice_level = self.set_voice_level
             self.voice_coordinator.on_mic_level = self.set_mic_level
             self.voice_coordinator.on_microphone_status = self.set_microphone_status
@@ -257,6 +262,8 @@ class HologramOverlay(QWebEngineView):
         record('voice_enable_completed')
 
     def closeEvent(self, event):
+        # Fecha a webcam antes do Qt, mesmo em encerramento da Ângela.
+        self.camera_bridge.close_from_gui()
         for window in list(self.result_windows.values()):
             window.close()
         self.result_windows.clear()

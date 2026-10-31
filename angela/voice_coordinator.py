@@ -43,6 +43,7 @@ class VoiceCoordinator:
         self.active = False
         self.busy = False
         self.engine = None
+        self.camera_bridge = None  # QT preview, configurado pelo HUD
         self.activated_once = False
         self.on_voice_level = lambda value: None
         self.on_mic_level = lambda value: None
@@ -166,6 +167,7 @@ class VoiceCoordinator:
                     if self.engine is None:
                         from .assistant import AssistantEngine
                         self.engine = AssistantEngine()
+                    self.engine.camera_bridge = self.camera_bridge
                     self.engine.on_camera_status = (
                         lambda status: self._emit_if_current(
                             epoch, 'camera_status', status

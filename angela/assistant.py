@@ -22,6 +22,7 @@ from .screen_vision import (
     VisionRequest, VisionError,
 )
 from .camera_vision import parse_camera_request, analyze_camera
+from .camera_mode import camera_mode_command, contextual_camera_question
 from .face_identity import FaceProfile, FaceIdentityError, face_intent
 from .dialog_context import (
     RecentVisualContext, asks_to_solve_equation, asks_about_recent_visual, equation_in_text,
@@ -64,6 +65,8 @@ class AssistantEngine:
         self._vision_pending: tuple[VisionRequest, float] | None = None
         self._face_pending: tuple[str, float] | None = None
         self.face_profile = FaceProfile()
+        # Injetado pelo HUD; a câmera vive somente na thread Qt principal.
+        self.camera_bridge = None
         # Apenas descrição textual recente em RAM. Nunca imagem, áudio ou biometria.
         self.visual_context = RecentVisualContext()
         self._equation_source_pending = False
@@ -88,6 +91,30 @@ class AssistantEngine:
         if not message:
             return "Escreva uma mensagem ou utilize o botão Ouvir."
 
+        # "Ative a visão computacional" autoriza somente prévia LOCAL ao
+        # vivo. Não compartilha fotos, não ativa Groq, não grava vídeo.
+        mode = camera_mode_command(message)
+        if mode is not None:
+            if self.camera_bridge is None:
+                return 'A visão ao vivo está disponível apenas na interface do Windows.'
+            try:
+                if mode == 'open':
+                    self.camera_bridge.open()
+                    record('camera_preview_command', action='open')
+                    return 'Visão computacional ativada. A câmera está à direita.'
+                was_open = self.camera_bridge.close()
+                # Fechar a prévia cancela qualquer pedido de imagem pendente.
+                self._vision_pending = None
+                self._face_pending = None
+                self._equation_source_pending = False
+                record('camera_preview_command', action='close')
+                return ('Câmera fechada.' if was_open
+                        else 'A câmera já estava fechada.')
+            except (RuntimeError, OSError, ValueError) as exc:
+                record('camera_preview_command_failed', action=mode,
+                       category=type(exc).__name__)
+                return str(exc)[:160]
+
         if unknown_speech(message):
             record('speech_not_understood', transcript=message)
             return 'Não consegui entender o que você disse. Pode repetir mais devagar?'
@@ -105,6 +132,8 @@ class AssistantEngine:
                     self._vision_pending = (
                         VisionRequest("camera", question), time.monotonic() + 75
                     )
+                    if self.camera_bridge is not None and self.camera_bridge.is_active():
+                        return 'Posso enviar uma foto à IA para analisar a equação?'
                     return 'Posso ativar a câmera e enviar uma foto à IA?'
                 if not getattr(self.chat, 'available', False):
                     return "Não consigo analisar a tela sem conexão com a IA."
@@ -139,9 +168,18 @@ class AssistantEngine:
                 record('vision_consent', approved=True, scope=request.scope)
                 # Sem guardar imagens no histórico, no disco ou no log.
                 if request.scope == 'camera':
+                    live = (self.camera_bridge is not None
+                            and self.camera_bridge.is_active())
+                    options = {}
+                    if live:
+                        # Reutiliza a prévia local: nunca abrir segunda QCamera.
+                        from .camera_vision import capture_camera
+                        options['capturer'] = lambda **_kwargs: capture_camera(
+                            frame_provider=self.camera_bridge.snapshot
+                        )
                     result = analyze_camera(
                         request, self.chat.api_key, status_cb=self.on_camera_status,
-                        identity_profile=self.face_profile
+                        identity_profile=self.face_profile, **options
                     )
                 else:
                     result = analyze_screen(request, self.chat.api_key)
@@ -174,7 +212,14 @@ class AssistantEngine:
                     return 'Apaguei o cadastro facial local.' if self.face_profile.forget() else 'Não há cadastro facial.'
                 try:
                     from .camera_vision import capture_camera
-                    frame = capture_camera(status_cb=self.on_camera_status)
+                    live = (self.camera_bridge is not None
+                            and self.camera_bridge.is_active())
+                    if live:
+                        frame = capture_camera(
+                            frame_provider=self.camera_bridge.snapshot
+                        )
+                    else:
+                        frame = capture_camera(status_cb=self.on_camera_status)
                     if operation == 'enroll':
                         self.face_profile.enroll(frame.jpeg_bytes, name='Rafael')
                         record('face_profile_enrolled', success=True)
@@ -205,6 +250,8 @@ class AssistantEngine:
             if not self.face_profile.enrolled():
                 return 'Ainda não tenho seu rosto cadastrado. Diga: cadastre meu rosto.'
             self._face_pending = ('recognize', time.monotonic() + 75)
+            if self.camera_bridge is not None and self.camera_bridge.is_active():
+                return 'Posso conferir seu rosto na câmera?'
             return 'Posso ativar a câmera para reconhecer seu rosto?'
         if request_face == 'delete':
             if not self.face_profile.enrolled():
@@ -213,12 +260,25 @@ class AssistantEngine:
             return 'Quer apagar definitivamente a referência facial salva neste Windows? Confirma?'
 
         camera_request = parse_camera_request(message)
+        live = (self.camera_bridge is not None and self.camera_bridge.is_active())
+        if (camera_request is None and live and
+                contextual_camera_question(message)):
+            # Reuse the active local preview for visual requests even when
+            # the utterance omits "câmera", without silently uploading pixels.
+            has_equation_context = bool(
+                asks_to_solve_equation(message) and
+                equation_in_text(self.visual_context.current() or '')
+            )
+            if not has_equation_context:
+                camera_request = VisionRequest("camera", message)
         if camera_request is not None:
             if not getattr(self.chat, 'available', False):
                 return ('Para analisar uma foto da webcam, preciso de GROQ_API_KEY. '
                         'A câmera permanece desligada.')
             self._vision_pending = (camera_request, time.monotonic() + 75)
             record('vision_consent_requested', scope='camera')
+            if live:
+                return 'Posso enviar uma foto da câmera à IA para análise?'
             return 'Posso ativar a câmera e enviar uma foto à IA para análise?'
 
         screen_request = parse_vision_request(message)
