@@ -130,7 +130,19 @@ def find_vscode() -> str | None:
     for executable in locations:
         if executable.is_file():
             return str(executable)
-    return shutil.which("code")
+    # VS Code may be installed in a custom folder, with only code.cmd on
+    # PATH (e.g. C:\Apps de programação\Microsoft VS Code\bin\code.cmd).
+    # Prefer the trusted sibling Code.exe: launch with shell=False, never
+    # treat a .cmd script as a program path.
+    from_path = shutil.which("code") or shutil.which("code.cmd")
+    if from_path:
+        candidate = Path(from_path)
+        if candidate.suffix.lower() == ".exe" and candidate.is_file():
+            return str(candidate)
+        executable = candidate.parent.parent / "Code.exe"
+        if executable.is_file():
+            return str(executable)
+    return None
 
 
 def launch_project(project: Project, executable=None, launcher=None, sleep=None, windows=None) -> str:

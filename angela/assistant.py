@@ -18,6 +18,7 @@ from .project_listing import list_request, list_folders, listing_reply
 from .adaptive_memory import preference_request, save_preference, load_preferences
 from .personal_memory import PersonalMemory, memory_request
 from .folder_registry import FolderRegistry, folder_ui_request, folder_alias_request
+from .registered_projects import open_registered_project
 from .command_quality import normalize_request, clock_request, local_clock_reply, browser_intent, execution_feedback_eligible, voice_status_request
 from .screen_vision import (
     parse_vision_request, confirmation_decision, analyze_screen,
@@ -146,6 +147,19 @@ class AssistantEngine:
                 return 'Salvei na memória.'
             except (OSError, ValueError, RuntimeError) as exc:
                 return 'Não consegui salvar: ' + str(exc)[:110]
+
+        # "Abra o projeto Curso no VS Code" usa alias previamente salvo.
+        # Precisa vir ANTES da abertura por Explorer e da busca genérica
+        # de projetos, que não sabe sobre os apelidos criados pelo usuário.
+        try:
+            workspace_reply = open_registered_project(message, self.folder_registry)
+        except (OSError, ValueError, RuntimeError):
+            workspace_reply = "Não consegui consultar os projetos cadastrados."
+        if workspace_reply is not None:
+            record("workspace_alias_routed", target="vscode")
+            if workspace_reply.startswith(("Confirmei ", "Enviei ", "Solicitei ")):
+                return self._as_action(workspace_reply)
+            return workspace_reply
 
         # Gerenciador visual de pastas e atalhos que o usuário cadastrou.
         if folder_ui_request(message):
@@ -477,6 +491,19 @@ class AssistantEngine:
             if not new_message or not new_message.startswith(('abra ', 'feche ')):
                 return new_message or 'Diga novamente, por favor.'
             message = new_message
+            # "Abra o projeto" -> "Qual?" -> "Curso" também precisa
+            # consultar os apelidos registrados, não só varrer repositórios.
+            try:
+                workspace_reply = open_registered_project(
+                    message, self.folder_registry
+                )
+            except (OSError, ValueError, RuntimeError):
+                workspace_reply = "Não consegui consultar os projetos cadastrados."
+            if workspace_reply is not None:
+                record("workspace_alias_routed", target="vscode", follow_up=True)
+                return (self._as_action(workspace_reply)
+                        if workspace_reply.startswith(("Confirmei ", "Enviei ", "Solicitei "))
+                        else workspace_reply)
         handled, answer = self.confirmation.resolve(message)
         if handled:
             if answer and answer.startswith('Abra o VS Code'):

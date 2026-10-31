@@ -84,20 +84,11 @@ class ActionDispatcher:
 
     @staticmethod
     def _open_vscode() -> None:
-        candidates = [
-            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Microsoft VS Code" / "Code.exe",
-            Path(os.environ.get("PROGRAMFILES", "")) / "Microsoft VS Code" / "Code.exe",
-            Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Microsoft VS Code" / "Code.exe",
-        ]
-        executable = next((p for p in candidates if p.is_file()), None)
-        if executable is not None:
-            subprocess.Popen([str(executable)])
-            return
-        code = shutil.which("code")
-        if code is not None:
-            subprocess.Popen([code])
-            return
-        raise FileNotFoundError("VS Code não encontrado. Verifique se está instalado.")
+        from .project_tools import find_vscode
+        executable = find_vscode()
+        if executable is None:
+            raise FileNotFoundError("VS Code não encontrado. Verifique se está instalado.")
+        subprocess.Popen([executable], shell=False)
 
     @staticmethod
     def _set_theme(light: bool) -> None:
