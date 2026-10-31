@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 
 from .mixed_language_asr import canonicalize_names
+from .self_improvement import apply_rules
 
 
 def correct_transcript(text: str) -> str:
@@ -29,4 +30,4 @@ def correct_transcript(text: str) -> str:
     ]
     for pattern, corrected in replacements:
         spoken = re.sub(pattern, corrected, spoken, flags=re.IGNORECASE)
-    return canonicalize_names(spoken)
+    return apply_rules(canonicalize_names(spoken))

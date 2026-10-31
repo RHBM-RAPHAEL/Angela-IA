@@ -16,6 +16,7 @@ from .command_clarification import CommandClarification
 from .intent_confirmation import IntentConfirmation
 from .project_listing import list_request, list_folders, listing_reply
 from .adaptive_memory import preference_request, save_preference, load_preferences
+from .self_improvement import learning_request, learn_correction, learning_status
 from .personal_memory import PersonalMemory, memory_request
 from .folder_registry import FolderRegistry, folder_ui_request, folder_alias_request
 from .registered_projects import open_registered_project
@@ -49,6 +50,7 @@ HELP_MESSAGE = (
     "Também posso mostrar previsão do tempo, vídeos do YouTube e respostas "
     "em janelas próprias, ou abrir pesquisas no navegador. "
     "Também posso guardar informações quando você disser salve na memória, "
+    "aprender correções de nomes de aplicativos quando você disser aprenda que, "
     "ou abrir uma janela para cadastrar atalhos de pastas. "
     "Se configurar a chave Groq, também podemos conversar sobre outros assuntos."
 )
@@ -102,6 +104,24 @@ class AssistantEngine:
         self.last_interpretation = None
         if not message:
             return "Escreva uma mensagem ou utilize o botão Ouvir."
+
+        # Autoaprendizado controlado: apenas nomes conhecidos e uma tabela
+        # gerada de literais Python. NUNCA executa código proposto pela IA.
+        training = learning_request(message)
+        if training is not None:
+            try:
+                result = learn_correction(*training)
+                record("self_improvement_rule_saved", kind="voice_alias")
+                return result
+            except (ValueError, RuntimeError, OSError) as exc:
+                return "Não consegui aprender essa correção: " + str(exc)[:120]
+        if normalize(message).replace(",", "").strip(" .!?") in {
+            "angela como esta seu aprendizado", "como esta seu aprendizado",
+            "angela quantas correcoes voce aprendeu",
+            "quantas correcoes voce aprendeu",
+            "angela voce esta aprendendo", "voce esta aprendendo",
+        }:
+            return learning_status()
 
         # Memória persistente SOMENTE sob pedido explícito. Não inferir fatos
         # de conversas, microfone, câmera ou histórico. Conteúdo não vai ao log.

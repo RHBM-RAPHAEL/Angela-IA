@@ -37,6 +37,14 @@ def save_feedback(command: str, reply: str, accepted: bool,
     }
     _write_line(target, entry)
     record("user_execution_feedback", accepted=bool(accepted), command=command[:300])
+    # Aggregate anonymous statistics. A negative evaluation NEVER causes
+    # executable code to be generated or applied without a known correction.
+    try:
+        from .self_improvement import summarize_feedback
+        if target == DEFAULT_PATH:
+            summarize_feedback(command, bool(accepted))
+    except (OSError, ValueError, RuntimeError, TypeError):
+        pass
 
 
 def record_conversation(role: str, text: str, path: Path | None = None) -> None:
