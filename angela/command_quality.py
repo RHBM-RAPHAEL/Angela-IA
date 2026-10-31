@@ -86,6 +86,27 @@ def normalize_request(text: str) -> str:
         r"^(?:abra|abre|feche|fecha|liste|mostre|quais)\b", fold(spoken)
     ) else (spoken if spoken != original and fold(spoken).startswith("liste ") else original)
 
+def voice_status_request(text: str) -> bool:
+    """Perguntas sobre escuta real, nao sobre explicacoes ou outros apps.
+
+    Receber a transcricao comprova que a entrada de voz funcionou naquele
+    instante, mas nao significa acesso da LLM ao audio bruto.
+    """
+    s = fold(text)
+    if not s or len(s) > 110:
+        return False
+    return bool(re.fullmatch(
+        r"(?:(?:voce|angela)\s+)?(?:esta|ta|consegue|pode)?\s*"
+        r"(?:me\s+)?(?:ouvindo|ouvir|ouve|escutando|escutar|escuta)"
+        r"(?:\s+(?:a\s+)?minha\s+voz|\s+o\s+que\s+eu\s+falo|\s+me)?"
+        r"|(?:(?:voce|angela)\s+)?(?:esta|ta)\s+"
+        r"(?:me\s+)?(?:ouvindo|escutando)\s+(?:a\s+)?minha\s+voz"
+        r"|(?:(?:voce|angela)\s+)?(?:me\s+)?(?:ouve|escuta)\s+"
+        r"(?:a\s+)?minha\s+voz",
+        s
+    ))
+
+
 def clock_request(text: str) -> bool:
     s = fold(text)
     if re.match(r"^(?:como|por que|porque)\b", s):

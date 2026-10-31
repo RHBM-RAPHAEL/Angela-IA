@@ -16,7 +16,7 @@ from .command_clarification import CommandClarification
 from .intent_confirmation import IntentConfirmation
 from .project_listing import list_request, list_folders, listing_reply
 from .adaptive_memory import preference_request, save_preference, load_preferences
-from .command_quality import normalize_request, clock_request, local_clock_reply, browser_intent, execution_feedback_eligible
+from .command_quality import normalize_request, clock_request, local_clock_reply, browser_intent, execution_feedback_eligible, voice_status_request
 from .screen_vision import (
     parse_vision_request, confirmation_decision, analyze_screen,
     VisionRequest, VisionError,
@@ -110,6 +110,11 @@ class AssistantEngine:
                         identity_profile=self.face_profile
                     )
                 return analyze_screen(request, self.chat.api_key)
+            # Resposta muito curta e ambigua do ASR (ex.: "assim" em vez
+            # de "sim"): nunca autorizar, mas tambem nao perder o pedido.
+            if time.monotonic() < expires and normalize(message) in {"assim", "a sim", "si"}:
+                self._vision_pending = (request, expires)
+                return 'Não entendi sua resposta. Diga sim para autorizar ou não para cancelar?'
             # Outro assunto cancela a autorização anterior sem captura.
 
         # Cadastro facial separado de identificacao verbal e capturas gerais.
@@ -140,6 +145,9 @@ class AssistantEngine:
                 except (FaceIdentityError, VisionError) as exc:
                     record('face_profile_error', category=type(exc).__name__)
                     return str(exc)
+            if time.monotonic() < expires and normalize(message) in {"assim", "a sim", "si"}:
+                self._face_pending = (operation, expires)
+                return 'Não entendi sua resposta. Diga sim para autorizar ou não para cancelar?'
 
         request_face = face_intent(message)
         if request_face in {'introduce', 'enroll'}:
@@ -189,6 +197,15 @@ class AssistantEngine:
                 f'Posso capturar uma imagem da {scope} e enviá-la à IA Groq '
                 'para responder sua pergunta? Diga sim para permitir ou cancelar. '
                 'Você autoriza?'
+            )
+        if voice_status_request(message):
+            # Este pedido só chegou aqui porque a voz já foi convertida em
+            # texto. A API remota não recebe PCM; evitar que ela negue a
+            # captura real do aplicativo.
+            record('microphone_status_answered', channel='transcribed_voice')
+            return (
+                'Sim, estou recebendo o que você fala pelo microfone. '
+                'O reconhecimento de voz converte sua fala em texto para mim.'
             )
         if clock_request(message):
             record('local_clock_requested')

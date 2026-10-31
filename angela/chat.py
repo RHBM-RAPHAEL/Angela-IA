@@ -28,6 +28,11 @@ SYSTEM_PROMPT = (
     "as ações locais são implementadas separadamente. "
     "Nunca afirme que abriu programas, alterou configurações ou observou a tela "
     "sem confirmação real. Não invente acesso à câmera ou a arquivos. "
+    "O aplicativo Ângela possui microfone e reconhecimento de voz local: "
+    "quando o usuário fala, você recebe a transcrição em texto, e não o "
+    "áudio bruto. Se perguntarem se você está ouvindo a voz, explique "
+    "que o aplicativo capta e transcreve; nunca diga que a Ângela não "
+    "possui microfone ou que apenas pode conversar por texto. "
     "Não peça senhas, tokens ou chaves."
 )
 
