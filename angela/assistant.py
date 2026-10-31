@@ -23,6 +23,7 @@ from .screen_vision import (
 )
 from .camera_vision import parse_camera_request, analyze_camera
 from .camera_mode import camera_mode_command, contextual_camera_question
+from .youtube_channels import ChannelConversation, open_known_channel, known_creator, requested_browser
 from .face_identity import FaceProfile, FaceIdentityError, face_intent
 from .dialog_context import (
     RecentVisualContext, asks_to_solve_equation, asks_about_recent_visual, equation_in_text,
@@ -58,6 +59,7 @@ class AssistantEngine:
         self.tools = WindowsToolExecutor()
         self.confirmation = IntentConfirmation()
         self.clarification = CommandClarification()
+        self.youtube_channels = ChannelConversation()
         self.last_interpretation = None
         self.last_panel = None
         self.last_result_view = None
@@ -335,6 +337,25 @@ class AssistantEngine:
         if clock_request(message):
             record('local_clock_requested')
             return local_clock_reply()
+
+        # Pedido de canal: preservar nome/browser entre a pergunta da Ângela
+        # e a resposta curta seguinte. Não transformar "alunos oca" em aula.
+        channel = self.youtube_channels.handle(
+            message,
+            open_known=lambda url, browser: open_known_channel(
+                url, browser, windows=self.windows
+            )
+        )
+        if channel is not None:
+            if known_creator(message) == 'Alanzoka':
+                self.last_interpretation = (
+                    'Abrir canal do YouTube Alanzoka, navegador '
+                    + requested_browser(message)
+                )
+            record('youtube_channel_route',
+                   recognized=bool(known_creator(message)),
+                   result_kind='opened' if channel.startswith('Abri ') else 'question')
+            return self._as_action(channel) if channel.startswith('Abri ') else channel
 
         # Pedidos de visualizacao usam roteador local, antes de um plano de IA
         # que poderia confundir "mostre um video" com "abra um programa".

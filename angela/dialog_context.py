@@ -48,8 +48,26 @@ def asks_about_recent_visual(message: str) -> bool:
 def equation_in_text(text: str) -> str | None:
     if not isinstance(text, str):
         return None
-    found = _EQUATION.search(text[:1000])
-    return " ".join(found.group(1).split()) if found else None
+    snippet = text[:1000]
+    found = _EQUATION.search(snippet)
+    if not found:
+        return None
+    # Reject partial matches inside OCR/vision hallucinations like:
+    # '3x + 9 = √s10 = x'. Matching its tail '10 = x' is not valid.
+    before = snippet[max(0, found.start() - 55):found.start()]
+    after = snippet[found.end():found.end() + 40]
+    local_before = re.split(r'[;.!?\n"“”]', before)[-1]
+    local_after = re.split(r'[;.!?\n"“”]', after)[0]
+    if "=" in local_before or "=" in local_after:
+        return None
+    left_quote = snippet.rfind('"', 0, found.start())
+    if left_quote >= 0:
+        right_quote = snippet.find('"', found.end())
+        if right_quote >= 0:
+            quoted = snippet[left_quote+1:right_quote]
+            if quoted.count("=") > 1:
+                return None
+    return " ".join(found.group(1).split())
 
 
 def _expression(expr: str) -> tuple[Fraction, Fraction] | None:

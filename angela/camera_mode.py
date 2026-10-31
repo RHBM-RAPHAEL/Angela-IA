@@ -46,6 +46,10 @@ def contextual_camera_question(message: str) -> bool:
         return False
     patterns = (
         r"\b(?:o que|que)\s+(?:voce\s+)?(?:ve|esta vendo|enxerga|percebe)\b",
+        r"\b(?:o que|qual)\s+(?:e|representa|significa)\s+"
+        r"(?:esse|este|essa|esta|o|a)\s+"
+        r"(?:desenho|objeto|imagem|figura|simbolo|coisa)\b",
+        r"\b(?:o que|qual)\s+(?:e|representa)\s+(?:isso|isto|aquilo)\b",
         r"\b(?:olhe|olha|veja|analise|analisa|examine|examina|"
         r"descreva|descreve)\s+(?:isso|isto|aqui|este|esse|"
         r"essa|o que|meu|minha|a|o)\b",

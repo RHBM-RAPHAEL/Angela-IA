@@ -17,6 +17,7 @@ import sys
 from PIL import Image, UnidentifiedImageError
 
 from .actions import normalize
+from .command_quality import fold
 from .audit_log import record
 from .screen_vision import ScreenFrame, VisionError, VisionRequest, analyze_frame
 from .perf_metrics import timed
@@ -47,7 +48,7 @@ def parse_camera_request(text: str) -> VisionRequest | None:
     ):
         return None
     cam = re.search(
-        r"\b(?:camera|webcam|camera frontal|camera integrada|camera do notebook)\b",
+        r"\b(?:camera|camara|webcam|camera frontal|camera integrada|camera do notebook)\b",
         spoken
     )
     if not cam:
@@ -227,6 +228,43 @@ def capture_camera(*, frame_provider=None, status_cb=None) -> ScreenFrame:
     return ScreenFrame(payload, width, height, "camera")
 
 
+def camera_question_for_model(spoken: str) -> str:
+    """Ask about visual content, not executing the user's UI commands.
+
+    The camera has already been captured after consent. Asking the model
+    'activate camera' invites a false capability refusal.
+    """
+    normalized = fold(spoken)
+    if "desenho" in normalized or "figura" in normalized:
+        return "Descreva o desenho ou figura visível na foto, em uma frase objetiva."
+    if "equacao" in normalized or "expressao matematica" in normalized:
+        return ("Leia a equação inteira da foto e, se os símbolos estiverem "
+                "legíveis, resolva-a. Se houver símbolos ambíguos, diga quais "
+                "e peça uma imagem mais nítida, sem inventar o resultado.")
+    if any(term in normalized for term in (
+        "o que esta vendo", "o que voce ve", "olhe na camera", "olhe na camara",
+        "ativa a camera", "ative a camera", "me veja", "veja pela camera",
+    )):
+        return "Descreva brevemente o que aparece na foto já capturada."
+    return spoken
+
+
+def clean_camera_analysis(reply: str) -> str:
+    """Drop only a false camera-activation disclaimer after actual capture.
+
+    Never fake a scene or turn a failed vision analysis into a successful one.
+    """
+    if not isinstance(reply, str):
+        return ""
+    cleaned = reply.strip()
+    cleaned = re.sub(
+        r"(?is)^não posso ativar a câmera,?\s*pois já estou "
+        r"analisando a foto que você enviou\.\s*",
+        "", cleaned, count=1
+    ).strip()
+    return cleaned or reply.strip()
+
+
 def analyze_camera(request: VisionRequest, api_key: str,
                    *, status_cb=None, capturer=capture_camera,
                    analyzer=analyze_frame, identity_profile=None) -> str:
@@ -247,7 +285,9 @@ def analyze_camera(request: VisionRequest, api_key: str,
             except Exception:
                 record("face_match_unavailable", category="local")
         with timed("visual_analysis"):
-            result = analyzer(frame, request.question, api_key)
+            result = clean_camera_analysis(analyzer(
+                frame, camera_question_for_model(request.question), api_key
+            ))
         record("camera_analysis", result_ready=bool(result))
         if matched_name == "Rafael":
             return "O rosto parece corresponder ao cadastro de Rafael. " + result
