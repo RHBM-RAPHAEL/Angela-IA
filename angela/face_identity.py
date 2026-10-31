@@ -44,7 +44,11 @@ def face_intent(text: str) -> str | None:
         r"\b(?:meu rosto|minha face|reconhecimento facial)\b", s
     ):
         return "enroll"
-    if re.search(r"\b(?:reconhec[ae]|reconhecer|identifiqu[ae]|identificar|quem sou eu|sabe quem sou|sabe quem eu sou)\b", s) and (
+    # "Você me conhece pela câmera?" pode ser erro acústico de "reconhece".
+    # Tratar somente na pergunta explícita SOBRE a câmera/rosto.
+    if re.fullmatch(r"(?:voce\s+)?(?:me\s+)?(?:conhece|conhecer)\s+(?:me\s+)?(?:pela|pelo|na|no|por|atraves da|atraves do)\s+(?:camera|webcam|face|rosto)", s):
+        return "recognize"
+    if re.search(r"\b(?:reconhec[ae]|reconhecer|identifiqu[ae]|identifica|identificar|quem sou eu|sabe quem sou|sabe quem eu sou)\b", s) and (
         re.search(r"\b(?:rosto|face|camera|webcam|me)\b", s) or "quem sou eu" in s or "sabe quem sou" in s
     ):
         return "recognize"

@@ -30,12 +30,22 @@ def capture_candidates(sd) -> list[CaptureConfig]:
         prefer_native = False
         explicit = None
     elif configured:
+        # Aceita tanto um índice como um trecho do nome de um microfone USB.
+        # Útil para headsets/lapelas sem depender do índice volátil do PortAudio.
         try:
             explicit = int(configured)
-            sd.query_devices(explicit, "input")
-            prefer_native = False
-        except (ValueError, TypeError) as exc:
-            raise ValueError("ANGELA_MIC_DEVICE deve ser índice numérico ou 'default'.") from exc
+        except ValueError:
+            matches = []
+            for index, info in enumerate(sd.query_devices()):
+                if info.get("max_input_channels", 0) > 0 and configured in str(info.get("name", "")).casefold():
+                    api = str(sd.query_hostapis(info["hostapi"])["name"]).lower()
+                    priority = 0 if "wasapi" in api else 1 if "mme" in api else 2
+                    matches.append((priority, index))
+            if not matches:
+                raise ValueError("Nenhum microfone corresponde ao nome em ANGELA_MIC_DEVICE.") from None
+            explicit = min(matches)[1]
+        sd.query_devices(explicit, "input")
+        prefer_native = False
     else:
         explicit = None
         prefer_native = os.environ.get("ANGELA_MIC_PREFER_WASAPI", "1") != "0"

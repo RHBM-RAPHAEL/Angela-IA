@@ -18,6 +18,7 @@ from .actions import normalize
 from .audio_frontend import AudioFrontend, capture_candidates
 from .audit_log import record
 from .perf_metrics import metric, measure_ms
+from .asr_selection import choose_recognition, configure_command_recognizer
 
 
 _WAKE_PATTERN = re.compile(
@@ -269,6 +270,8 @@ class WakeListener:
                         self._mic_peak = 0.0
                         recognizer = (KaldiRecognizer(model, 16000) if self._listening_for_command
                                       else KaldiRecognizer(model, 16000, wake_grammar))
+                        if self._listening_for_command:
+                            configure_command_recognizer(recognizer)
                         replay.clear()
                         frontend.reset()
                         parser.reset()
@@ -316,7 +319,10 @@ class WakeListener:
                         replay.append(processed)
                     complete = recognizer.AcceptWaveform(processed)
                     if complete:
-                        recognized = json.loads(recognizer.Result()).get("text", "")
+                        recognized, used_alternative = choose_recognition(recognizer.Result())
+                        if self._listening_for_command and used_alternative:
+                            # Não registrar frases nem dados de áudio extras.
+                            record('asr_context_alternative_used', kind='face_camera')
                         if not self._listening_for_command:
                             # Só usa a decodificação livre após um segmento
                             # finalizado, nunca em paralelo continuamente.

@@ -182,6 +182,19 @@ class AudioFrontendTests(unittest.TestCase):
         self.assertEqual(result[0].sample_rate, 16000)
         self.assertNotIn("wasapi-native", [candidate.source for candidate in result])
 
+    def test_selecionar_headset_usb_pelo_nome(self):
+        sd = FakeSoundDevice()
+        with patch.dict(os.environ, {"ANGELA_MIC_DEVICE": "microfone usb"}):
+            candidates = capture_candidates(sd)
+        self.assertEqual(candidates[0].device, 0)
+        self.assertEqual(candidates[0].source, "manual")
+        self.assertEqual(len(candidates), 1)
+
+    def test_nome_desconhecido_nao_escolhe_microfone_errado(self):
+        with patch.dict(os.environ, {"ANGELA_MIC_DEVICE": "microfone inexistente"}):
+            with self.assertRaisesRegex(ValueError, "Nenhum microfone"):
+                capture_candidates(FakeSoundDevice())
+
     def test_transcricao_comando_junto_a_palavra(self):
         self.assertEqual(
             choose_wake_transcript("angela abra o opera", "angela"),
