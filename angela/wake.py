@@ -19,6 +19,7 @@ from .audio_frontend import AudioFrontend, capture_candidates
 from .audit_log import record
 from .perf_metrics import metric, measure_ms
 from .asr_selection import choose_recognition, configure_command_recognizer
+from .speech_corrections import correct_transcript
 
 
 _WAKE_PATTERN = re.compile(
@@ -322,7 +323,9 @@ class WakeListener:
                         recognized, used_alternative = choose_recognition(recognizer.Result())
                         if self._listening_for_command and used_alternative:
                             # Não registrar frases nem dados de áudio extras.
-                            record('asr_context_alternative_used', kind='face_camera')
+                            kind = ('face_camera' if 'camera' in normalize(recognized)
+                                    else 'english_name')
+                            record('asr_context_alternative_used', kind=kind)
                         if not self._listening_for_command:
                             # Só usa a decodificação livre após um segmento
                             # finalizado, nunca em paralelo continuamente.
@@ -337,6 +340,12 @@ class WakeListener:
                         event = parser.accept(recognized, now)
                         if event:
                             kind, text = event
+                            if kind == 'wake_command':
+                                normalized_name = correct_transcript(text)
+                                if normalized_name != text:
+                                    record('asr_foreign_name_corrected',
+                                           result='canonicalized')
+                                    text = normalized_name
                             if self._listening_for_command and kind == 'wake_command':
                                 self._listening_for_command = False
                             if kind == "wake_command":

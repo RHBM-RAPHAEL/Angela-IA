@@ -5,6 +5,8 @@ Mantém a frase original intacta quando não há correção específica.
 from __future__ import annotations
 import re
 
+from .mixed_language_asr import canonicalize_names
+
 
 def correct_transcript(text: str) -> str:
     spoken = text.strip()
@@ -27,4 +29,4 @@ def correct_transcript(text: str) -> str:
     ]
     for pattern, corrected in replacements:
         spoken = re.sub(pattern, corrected, spoken, flags=re.IGNORECASE)
-    return spoken
+    return canonicalize_names(spoken)

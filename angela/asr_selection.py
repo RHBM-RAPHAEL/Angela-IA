@@ -9,6 +9,7 @@ import json
 import re
 
 from .command_quality import fold
+from .mixed_language_asr import prefer_better_english_hypothesis
 
 _FACE_CAMERA = re.compile(r"\b(?:camera|webcam|rosto|face)\b")
 _FACE_QUESTION = re.compile(
@@ -52,6 +53,17 @@ def choose_recognition(result: str | dict) -> tuple[str, bool]:
     except (TypeError, ValueError):
         return text, False
     if not camera_identity_question(text):
+        # If Vosk itself heard the exact English application name in a
+        # near-tied alternative, use that acoustic evidence. Never select a
+        # different action or infer product from a vague word alone.
+        for option in choices[1:]:
+            other = option["text"].strip()
+            try:
+                diff = best_score - float(option.get("confidence"))
+            except (ValueError, TypeError):
+                continue
+            if prefer_better_english_hypothesis(text, other, delta=diff):
+                return other, True
         return text, False
     # Apenas a palavra conhece -> reconhece / identifica dentro do pedido
     # já restrito; jamais transformar outra pergunta ou executar comandos.
